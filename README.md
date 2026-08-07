@@ -10,29 +10,42 @@ RL-autoencodes that reader so its readout reconstructs the activation. This repo
 pipeline: pretraining, RL, evals, and an interactive lens playground.
 
 Built on [easyNLA](https://github.com/asherps/EasyNLA) (Natural Language Autoencoders) — the `nla/`
-package is the shared library and also carries the RL trainer.
+package is the shared library and also carries the RL trainer. The naive future-lens needs no
+Claude labeling: its SFT target is the model's *own* rollout continuation, so datagen is a single
+GPU pass (`pretrain/collect_ao_data.py`), not the easyNLA API-explanation pipeline.
 
 ## Layout
 
 ```
-nla/         # shared library (from easyNLA): schema, injection, models, utils, datagen,
-             #   train_sft.py (SFT), and train_rl_self_contained.py (the NLA reconstruction-RL)
-pretrain/    # pretrain the naive future-lens: FineFineWeb datagen config + finalize_naive_data.py
+nla/         # shared library (from easyNLA): schema, injection, models, utils,
+             #   train_sft.py (SFT: --mode av future-lens / --mode ar critic),
+             #   train_rl_self_contained.py + train_rl_vllm.py (the NLA reconstruction-RL).
+             #   nla/datagen/ keeps only injection_tokens.py (shared marker-token picker).
+pretrain/    # naive future-lens datagen + SFT prep: collect_ao_data.py → prep_layer.py
+             #   → finalize_naive_data.py (activation → continuation pairs, no Claude labels)
 evals/       # two eval families (below)
 interface/   # WeirdChat lens playground (FastAPI: weirdchat_lens.py + weirdchat_ui.html)
 scripts/     # ALL plotting lives here (fed-layer sweeps, RL curves) — never in evals/
-configs/     # datagen + RL yaml configs
+configs/     # RL yaml configs
 ```
 
 ## Stages
 
 **1. Pretrain the naive future-lens** — `pretrain/`
 ```bash
-# datagen: extract L62 activations over a FineFineWeb slice + build (activation → continuation) pairs
-python -m nla.datagen.run_pipeline --config configs/datagen/qwen3_8b_finefineweb_100k.yaml
-python pretrain/finalize_naive_data.py --labeled <raw.parquet> --meta <raw.parquet.meta.json> --out data/naive_L62
+# datagen: one GPU pass over a FineFineWeb slice — grab the L62 activation AND K sampled model
+# rollouts (the continuations the model actually produces) at each high-entropy decision point.
+python pretrain/collect_ao_data.py --base-model Qwen/Qwen3.6-27B --corpus m-a-p/FineFineWeb \
+  --layers 62 --rollouts 16 --out data/collect_L62.parquet
+# pick the training layer's token-matched activation → per-layer parquet
+python pretrain/prep_layer.py --labeled data/collect_L62.parquet --layer 62 --out data/train_L62.parquet
+# build (activation → RAW continuation) SFT pairs — target = rollouts[i], NOT a Claude label
+python pretrain/finalize_naive_data.py --labeled data/train_L62.parquet \
+  --meta data/collect_L62.parquet.meta.json --out-train data/naive_L62/train.parquet \
+  --out-val data/naive_L62/val.parquet
 # SFT the future-lens (LoRA on the base model, activation injected at a marker token)
-python -m nla.train_sft --mode av --parquet data/naive_L62/train.parquet --sidecar ... --save-dir ckpts/av_L62
+python -m nla.train_sft --mode av --parquet data/naive_L62/train.parquet \
+  --sidecar data/naive_L62/train.parquet.nla_meta.yaml --save-dir ckpts/av_L62
 ```
 
 **2. NLA reconstruction-RL** — lives in `nla/`
