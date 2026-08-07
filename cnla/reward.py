@@ -116,6 +116,10 @@ def loo_fve_rewards(
     w = whitener.to(dev)
     g = torch.nn.functional.normalize(target.float(), dim=-1)   # L2-normed target
     gw = w(g)                                                   # [B, d] whitened, centered
+    # normalize each AR vector to the same unit space as g (the AR trains with
+    # direction-normalized MSE; keeps the lstsq well-conditioned — α still absorbs
+    # any residual per-bullet scale).
+    vecs = torch.nn.functional.normalize(vecs.float(), dim=-1)
     Vw = w(vecs)                                                # [B, K, d] whitened
     Vw = Vw * valid.unsqueeze(-1).float()                       # zero out invalid columns
 
