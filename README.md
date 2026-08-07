@@ -20,6 +20,7 @@ nla/         # shared library (from easyNLA): schema, injection, models, utils, 
 pretrain/    # pretrain the naive future-lens: FineFineWeb datagen config + finalize_naive_data.py
 evals/       # two eval families (below)
 interface/   # WeirdChat lens playground (FastAPI: weirdchat_lens.py + weirdchat_ui.html)
+scripts/     # ALL plotting lives here (fed-layer sweeps, RL curves) — never in evals/
 configs/     # datagen + RL yaml configs
 ```
 
@@ -47,7 +48,7 @@ python -m nla.train_rl_self_contained --av-ckpt ckpts/av_L62/iter_XXXX --base-ck
   `judge_intermediates.py` (Sonnet-5, discrimination = hit − decoy-FP). Variants in
   `naive_variants.json`; the 6 rebuilt A.6 sets in `datasets/`.
 - **Fed-layer sweep** (does the lens track the *workspace* (J-lens) or the *answer*, vs read depth):
-  `fedlayer_sweep_eval.py` → `judge_fedlayer.py` → `plot_fedlayer.py` / `plot_fedlayer_v2.py`.
+  `fedlayer_sweep_eval.py` → `judge_fedlayer.py` → plots in `scripts/` (`plot_fedlayer*.py`, `plot_rl.py`).
 
 **4. Interface** — `interface/`
 ```bash
