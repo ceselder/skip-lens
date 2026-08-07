@@ -20,6 +20,7 @@ STEPS=${STEPS:-400}; BP=${BP:-8}; GS=${GS:-16}; EVERY=${EVERY:-100}
 EVALS=${EVALS:-base_fve text_judges}   # text_judges (coherence) needs ANTHROPIC_API_KEY
 $V -m cnla.train_cnla_rl \
   --base-ckpt Qwen/Qwen3.6-27B --quant none --device-map single \
+  --no-train-critic \
   --av-ckpt "$AV" --ar-ckpt "$AR" \
   --sidecar "$SIDE" --whitener data/cnla/whitener.pt \
   --rl-parquet data/cnla/av_train.parquet --save-dir ckpts/cnla_rl_L62 \

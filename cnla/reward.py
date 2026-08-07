@@ -70,20 +70,27 @@ class Whitener:
 # --------------------------------------------------------------------------- #
 # Optimal-composition FVE
 # --------------------------------------------------------------------------- #
-def _lstsq_fve(V: torch.Tensor, g: torch.Tensor) -> torch.Tensor:
-    """Best-reconstruction FVE from the span of the columns of V.
+def _lstsq_fve(V: torch.Tensor, g: torch.Tensor, ridge: float = 1e-4):
+    """Best-reconstruction FVE from the span of the columns of V + the coefficients.
 
     V: [B, d, k] whitened bullet vectors (columns).  g: [B, d] whitened target.
-    Returns fve: [B].  ĥ = V α*, α* = lstsq(V, g); FVE = 1 − ‖g−ĥ‖²/‖g‖²
-    (whitened target is already centered, so the FVE denominator is ‖g‖²).
-    """
-    b = g.unsqueeze(-1)                                   # [B, d, 1]
-    # driver='gelsd' handles rank-deficient V (redundant bullets) gracefully.
-    sol = torch.linalg.lstsq(V, b, driver="gelsd").solution   # [B, k, 1]
-    ghat = (V @ sol).squeeze(-1)                          # [B, d]
-    resid = ((g - ghat) ** 2).sum(-1)                     # [B]
-    denom = (g ** 2).sum(-1).clamp_min(1e-12)             # [B]
-    return 1.0 - resid / denom
+    Returns (fve [B], sol [B, k, 1]).  ĥ = V α*; FVE = 1 − ‖g−ĥ‖²/‖g‖² (whitened
+    target already centered, so the denominator is ‖g‖²).
+
+    torch.linalg.lstsq on CUDA only supports driver='gels' (no rank-deficient
+    driver), so solve the RIDGE-regularized normal equations (VᵀV+λI)α = Vᵀg via
+    torch.linalg.solve — CUDA-native, and robust to redundant / zeroed (masked-out)
+    bullet columns (a zero column just gets α≈0 from the ridge)."""
+    Vt = V.transpose(1, 2)                                   # [B, k, d]
+    k = Vt.shape[1]
+    A = Vt @ V                                               # [B, k, k]
+    A = A + ridge * torch.eye(k, device=A.device, dtype=A.dtype)
+    b = Vt @ g.unsqueeze(-1)                                 # [B, k, 1]
+    sol = torch.linalg.solve(A, b)                           # [B, k, 1]
+    ghat = (V @ sol).squeeze(-1)                             # [B, d]
+    resid = ((g - ghat) ** 2).sum(-1)                        # [B]
+    denom = (g ** 2).sum(-1).clamp_min(1e-12)                # [B]
+    return 1.0 - resid / denom, sol
 
 
 def loo_fve_rewards(
@@ -123,13 +130,10 @@ def loo_fve_rewards(
     Vw = w(vecs)                                                # [B, K, d] whitened
     Vw = Vw * valid.unsqueeze(-1).float()                       # zero out invalid columns
 
-    # full-set FVE (columns = whitened bullet vectors)
+    # full-set FVE (columns = whitened bullet vectors) + optimal coefficients
     Vcol = Vw.transpose(1, 2)                                   # [B, d, K]
-    fve_full = _lstsq_fve(Vcol, gw)                             # [B]
-
-    # α* for the full set (diagnostics)
-    coeff_full = torch.linalg.lstsq(Vcol, gw.unsqueeze(-1), driver="gelsd").solution.squeeze(-1)
-    coeff_full = coeff_full * valid.float()
+    fve_full, coeff_full = _lstsq_fve(Vcol, gw)                 # [B], [B, K, 1]
+    coeff_full = coeff_full.squeeze(-1) * valid.float()
 
     # leave-one-out: drop column i (mask to zero — a zero column contributes nothing to
     # the span, exactly equivalent to removing it from the lstsq).
@@ -139,7 +143,7 @@ def loo_fve_rewards(
         keep = valid.clone()
         keep[:, i] = False
         Vi = (Vw * keep.unsqueeze(-1).float()).transpose(1, 2)  # [B, d, K] with col i (and invalids) zeroed
-        fve_i = _lstsq_fve(Vi, gw)
+        fve_i, _ = _lstsq_fve(Vi, gw)
         fve_loo[:, i] = fve_i
         r[:, i] = fve_full - fve_i
 
