@@ -9,7 +9,7 @@
 #SBATCH --output=/workspace-vast/celeste/cnla-skip-lens/logs/cnla_av_%j.out
 set -uo pipefail
 cd /workspace-vast/celeste/cnla-skip-lens
-export HF_HOME=/workspace-vast/pretrained_ckpts HF_HUB_OFFLINE=1 PYTHONPATH=$PWD
+export HF_HOME=/workspace-vast/pretrained_ckpts HF_HUB_OFFLINE=1 PYTHONPATH=$PWD WANDB_MODE=disabled
 V=/workspace-vast/celeste/oracle-lens/.venv/bin/python
 echo "=== node $(hostname) ==="; nvidia-smi --query-gpu=name,memory.total --format=csv,noheader | head -1
 
