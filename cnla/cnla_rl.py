@@ -149,7 +149,7 @@ def compute_cnla_advantages(
     n_bull = vmask.sum(1).float()
     # per-rollout mean bullet advantage (for scalar logging)
     adv_scalar = torch.stack([
-        bull_adv[i][vmask[i]].mean() if bool(vmask[i].any()) else torch.zeros((), device=dev)
+        bull_adv[i][vmask[i]].mean() if bool(vmask[i].any()) else torch.zeros((), device=device)
         for i in range(B)
     ])
     # within-rollout marginal spread = uniqueness proxy (high → bullets differ)
