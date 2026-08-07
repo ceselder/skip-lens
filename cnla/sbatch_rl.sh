@@ -18,9 +18,10 @@ echo "=== node $(hostname) | AV=$AV | AR=$AR ==="
 # STEPS/BP/GS overridable for smoke-tests (STEPS=2 BP=2 GS=4 sbatch ...)
 STEPS=${STEPS:-400}; BP=${BP:-8}; GS=${GS:-16}; EVERY=${EVERY:-100}
 $V -m cnla.train_cnla_rl \
-  --base-ckpt Qwen/Qwen3.6-27B --av-ckpt "$AV" --ar-ckpt "$AR" \
+  --base-ckpt Qwen/Qwen3.6-27B --quant none --device-map single \
+  --av-ckpt "$AV" --ar-ckpt "$AR" \
   --sidecar "$SIDE" --whitener data/cnla/whitener.pt \
-  --parquet data/cnla/av_train.parquet --save-dir ckpts/cnla_rl_L62 \
+  --rl-parquet data/cnla/av_train.parquet --save-dir ckpts/cnla_rl_L62 \
   --num-steps "$STEPS" --batch-prompts "$BP" --group-size "$GS" \
   --max-new-tokens 110 --temperature 1.0 \
   --kl-beta 0.1 --lr 3e-5 --save-every 25 \
