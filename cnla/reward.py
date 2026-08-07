@@ -70,7 +70,7 @@ class Whitener:
 # --------------------------------------------------------------------------- #
 # Optimal-composition FVE
 # --------------------------------------------------------------------------- #
-def _lstsq_fve(V: torch.Tensor, g: torch.Tensor, ridge: float = 1e-4):
+def _lstsq_fve(V: torch.Tensor, g: torch.Tensor, ridge: float = 1e-3):
     """Best-reconstruction FVE from the span of the columns of V + the coefficients.
 
     V: [B, d, k] whitened bullet vectors (columns).  g: [B, d] whitened target.
@@ -81,10 +81,18 @@ def _lstsq_fve(V: torch.Tensor, g: torch.Tensor, ridge: float = 1e-4):
     driver), so solve the RIDGE-regularized normal equations (VᵀV+λI)α = Vᵀg via
     torch.linalg.solve — CUDA-native, and robust to redundant / zeroed (masked-out)
     bullet columns (a zero column just gets α≈0 from the ridge)."""
+    V = torch.nan_to_num(V)
+    g = torch.nan_to_num(g)
     Vt = V.transpose(1, 2)                                   # [B, k, d]
     k = Vt.shape[1]
     A = Vt @ V                                               # [B, k, k]
-    A = A + ridge * torch.eye(k, device=A.device, dtype=A.dtype)
+    # RELATIVE ridge (scales with the whitened magnitude — whitening blows vectors
+    # up ~1/std, so an absolute λ is negligible vs VᵀV~thousands) + a tiny absolute
+    # floor. Keeps A strictly positive-definite even for rank-deficient (two near-
+    # identical bullets) or all-masked sets — else torch.linalg.solve throws "singular".
+    diag_mean = A.diagonal(dim1=-2, dim2=-1).mean(-1).clamp_min(0.0)   # [B]
+    eye = torch.eye(k, device=A.device, dtype=A.dtype)
+    A = A + (ridge * diag_mean + 1e-6).view(-1, 1, 1) * eye
     b = Vt @ g.unsqueeze(-1)                                 # [B, k, 1]
     sol = torch.linalg.solve(A, b)                           # [B, k, 1]
     ghat = (V @ sol).squeeze(-1)                             # [B, d]
