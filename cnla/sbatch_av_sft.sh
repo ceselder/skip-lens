@@ -24,7 +24,7 @@ $V cnla/fit_whitener.py --data data/cnla/cnla_L62.parquet --out data/cnla/whiten
 # 3. AV-SFT: LoRA r64/a16 (rsLoRA hardcoded), all modules, Karvonen inject at block 1,
 #    CE on the 4-bullet response. Seeds the RL policy's format.
 $V -m nla.train_sft --mode av --base-ckpt Qwen/Qwen3.6-27B \
-  --parquet data/cnla/av_train.parquet --sidecar data/cnla/av_train.parquet.nla_meta.yaml \
+  --parquet data/cnla/av_train.parquet --sidecar data/cnla/av_train.parquet \
   --save-dir ckpts/cnla_av_L62 --use-lora --lora-r 64 --lora-alpha 16 --lora-scope all \
   --num-steps 300 --batch-size 16 --gradient-accumulation-steps 4 --save-every 150
 echo "AV_SFT_DONE"
