@@ -27,5 +27,5 @@ $V -m cnla.train_cnla_rl \
   --num-steps "$STEPS" --batch-prompts "$BP" --group-size "$GS" \
   --max-new-tokens 110 --temperature 1.0 \
   --kl-beta 0.1 --lr 3e-5 --save-every 25 \
-  --eval-every "$EVERY" --evals $EVALS
+  --eval-every "$EVERY" --text-judges-every "$EVERY" --evals $EVALS
 echo "CNLA_RL_DONE"
