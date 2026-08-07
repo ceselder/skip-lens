@@ -1,0 +1,43 @@
+{
+ "model": "claude-sonnet-4-6",
+ "target_counts": {
+  "multihop": 50,
+  "multilingual": 54,
+  "order_of_ops": 55,
+  "poetry": 52,
+  "typo": 96,
+  "association": 50
+ },
+ "report": {
+  "order_of_ops": {
+   "kept": 55,
+   "dropped": 0,
+   "source": "code (exact)"
+  },
+  "typo": {
+   "kept": 92,
+   "dropped": 1,
+   "source": "code perturbation + carrier"
+  },
+  "multihop": {
+   "kept": 50,
+   "dropped": 15,
+   "source": "claude-sonnet-4-6"
+  },
+  "multilingual": {
+   "kept": 54,
+   "dropped": 11,
+   "source": "claude-sonnet-4-6"
+  },
+  "poetry": {
+   "kept": 52,
+   "dropped": 2,
+   "source": "claude-sonnet-4-6"
+  },
+  "association": {
+   "kept": 50,
+   "dropped": 0,
+   "source": "claude-sonnet-4-6"
+  }
+ }
+}

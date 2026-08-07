@@ -1,0 +1,29 @@
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# model weights / activations / data (never commit)
+*.pt
+*.bin
+*.safetensors
+*.npy
+ckpts/
+checkpoints/
+data/
+wandb/
+logs/
+run/
+
+# eval outputs (keep the datasets + registries, not the bulky score/readout dumps)
+evals/results/
+*_scores.json
+*_readouts.json
+
+# secrets
+.env
+*.key
+/tmp/.lp
+/tmp/.fb

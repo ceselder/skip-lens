@@ -1,0 +1,44 @@
+# NLA RL for Qwen3.6-27B on 6xH200 (140GB) — whitened-activation run.
+# Derived from rl_vllm_qwen36_27b.yaml (B200/183GB). The B200 config used ~176GB;
+# an H200 is 43GB smaller and the three resident model copies (vLLM ~54GB + HF
+# actor 54GB + critic 36GB = ~144GB of weights) don't fit. Fix:
+#   vllm_quantization: fp8  -> rollout copy 54GB -> ~27GB  (training stays bf16)
+#   + trimmed batch / micro-batches / KV so the rest fits with headroom.
+# Memory budget/GPU: actor 54 + critic 36 + vLLM(fp8 ~27 + KV ~12) + transients ~10 ≈ 139/140.
+evals: [base_fve]
+train_critic: true
+ar_lora: true
+ar_lora_r: 64
+ar_lora_alpha: 16
+
+lr: 1.0e-4
+critic_lr: 8.0e-5
+num_steps: 1000
+batch_prompts: 144        # 6×24 (must divide 6 DP ranks); down from 504 for the tighter H200 KV/transient budget
+group_size: 8
+max_new_tokens: 256
+length_penalty: 0.01
+temperature: 1.0
+
+lora_r: 64
+lora_alpha: 16
+use_rslora: true
+lora_scope: all           # MUST match the AV warm-start scope (av_merged_a075)
+
+vllm_tp: 1
+vllm_max_len: 1024
+vllm_quantization: fp8    # <-- H200 fit: halves the ~54GB rollout weight copy
+vllm_gpu_mem: 0.25        # 0.40->0.25: fp8 weights ~27GB + ~12GB KV within the ~39GB left after actor+critic
+ipc_weight_sync: true
+vllm_name_map: qwen3_5_wrapper
+vllm_attn_backend: FLASH_ATTN
+
+logp_micro_batch: 4       # 8->4: smaller activation transient for the tighter budget (chunked-CE keeps logits cheap)
+critic_micro_batch: 2     # 4->2: same
+gradient_checkpointing: true
+
+eval_every: 10
+eval_n_prompts: 128
+save_every: 100
+wandb_project: nla-qwen36-27b-white
+wandb_name: rl_vllm_a075_h200

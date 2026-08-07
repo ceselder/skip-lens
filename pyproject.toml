@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "skip-lens"
+version = "0.1.0"
+description = "Train, serve, and evaluate the naive multi-token J-lens (future-lens) on Qwen3.6-27B, with optional NLA reconstruction-RL"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+dependencies = [
+    "torch",
+    # qwen3_5 (Qwen3.5/3.6 hybrid) needs transformers >=5.5.1 (the v4 pins predate it)
+    "transformers>=5.5.1,<5.6",
+    "safetensors",
+    "httpx",
+    "orjson",
+    "pyyaml",
+    "numpy",
+    "pyarrow",
+    "datasets",
+    "anthropic",
+    "peft",
+    "wandb",
+    "tqdm",
+    "huggingface_hub",
+    "hf_transfer",
+    # interface
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    # plotting the eval sweeps
+    "matplotlib",
+]
+# Optional, installed separately:
+#   flash-linear-attention : Qwen3.6 gated-DeltaNet Triton kernels (runtime)
+#   causal-conv1d          : DeltaNet fast path (falls back to torch without it)
+#   bitsandbytes           : 4-bit / QLoRA + 8-bit Adam
+#   vllm + vllm-lens       : fast RL rollout backend (own venv)
+
+[project.urls]
+Homepage = "https://github.com/ceselder/skip-lens"
+
+[tool.setuptools.packages.find]
+include = ["nla*"]
+
+[tool.setuptools.package-data]
+nla = ["datagen/*.yaml"]
+
+[tool.ruff]
+line-length = 119

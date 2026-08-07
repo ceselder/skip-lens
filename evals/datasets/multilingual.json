@@ -1,0 +1,1681 @@
+{
+ "name": "multilingual",
+ "n": 54,
+ "spec": "Gurnee et al. A.6, rebuilt to spec",
+ "items": [
+  {
+   "prompt": "Lo opuesto de \"fr\u00edo\" es ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Spanish"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "cold"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "hot"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Le contraire de \"rapide\" est ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "French"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "fast"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "slow"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Das Gegenteil von \"hell\" ist ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "German"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "bright"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "dark"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "De kleur van een rijpe banaan is ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Dutch"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "color"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "banana"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "yellow"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Przeciwie\u0144stwo s\u0142owa \"stary\" to ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Polish"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "old"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "young"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "\"K\u00fc\u00e7\u00fck\"\u00fcn z\u0131tt\u0131 ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Turkish"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "small"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "large"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Ibu kota Jepang adalah ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Indonesian"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "capital"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "Japan"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "Tokyo"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "En st\u00f6rre version av en damm \u00e4r en ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Swedish"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "bigger-version"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "pond"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "lake"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Opak slova \"za\u010d\u00e1tek\" je ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Czech"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "beginning"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "end"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Culoarea cerului senin este ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Romanian"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "color"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "clear sky"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "blue"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Lo opuesto de \"fr\u00edo\" es ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Spanish"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "cold"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "hot"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Le contraire de \"rapide\" est ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "French"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "fast"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "slow"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Das Gegenteil von \"alt\" ist ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "German"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "old"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "young"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "O oposto de \"escuro\" \u00e9 ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Portuguese"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "dark"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "light"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Het meervoud van \"hond\" is ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Dutch"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "plural"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "dog"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "dogs"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Przeciwie\u0144stwo s\u0142owa \"ma\u0142y\" to ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Polish"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "small"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "big"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "\"Elma\"n\u0131n rengi ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Turkish"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "color"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "apple"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "red"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Ibu kota Italia adalah ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Indonesian"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "capital"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "Italy"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "Rome"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Motsatsen till \"kall\" \u00e4r ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Swedish"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "cold"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "warm"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Hlavn\u00ed m\u011bsto Francie je ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Czech"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "capital"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "France"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "Paris"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "O versiune mai mare a unui \"c\u00e2ine\" este un ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Romanian"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "bigger-version"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "dog"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "wolf"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Lo opuesto de \"fr\u00edo\" es ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Spanish"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "cold"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "hot"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Le contraire de \"rapide\" est ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "French"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "fast"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "slow"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Das Gegenteil von \"hell\" ist ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "German"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "bright"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "dark"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "De kleur van bananen is ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Dutch"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "colour"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "banana"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "yellow"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Stolica Francji to ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Polish"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "capital"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "France"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "Paris"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "\"K\u00fc\u00e7\u00fck\" kelimesinin z\u0131t anlaml\u0131s\u0131 ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Turkish"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "small"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "large"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Ibu kota Jepang adalah ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Indonesian"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "capital"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "Japan"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "Tokyo"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Motsatsen till \"gammal\" \u00e4r ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Swedish"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "old"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "young"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Mno\u017en\u00e9 \u010d\u00edslo slova \"pes\" je ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Czech"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "plural"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "dog"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "dogs"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Culoarea cerului senin este ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Romanian"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "colour"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "clear sky"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "blue"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Lo opuesto de \"r\u00e1pido\" es ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Spanish"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "fast"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "slow"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Le contraire de \"chaud\" est ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "French"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "hot"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "cold"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Das Gegenteil von \"hell\" ist ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "German"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "bright"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "dark"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "De kleur van een rijpe banaan is ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Dutch"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "colour"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "banana"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "yellow"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Przeciwie\u0144stwo s\u0142owa \"stary\" to ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Polish"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "old"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "young"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Fransa'n\u0131n ba\u015fkenti ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Turkish"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "capital"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "France"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "Paris"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Warna langit yang cerah adalah ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Indonesian"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "colour"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "sky"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "blue"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Motsatsen till \"liten\" \u00e4r ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Swedish"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "small"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "large"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Opak slova \"den\" je ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Czech"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "day"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "night"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "O versiune mai mare a unui sat este un ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Romanian"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "bigger-version"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "village"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "city"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Lo opuesto de \"fr\u00edo\" es ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Spanish"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "cold"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "hot"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Le contraire de \"rapide\" est ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "French"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "fast"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "slow"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Das Gegenteil von \"hell\" ist ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "German"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "bright"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "dark"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "De kleur van een rijpe banaan is ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Dutch"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "colour"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "banana"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "yellow"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Przeciwie\u0144stwo s\u0142owa \"stary\" to ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Polish"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "old"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "young"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "\"K\u00fc\u00e7\u00fck\" kelimesinin z\u0131t anlaml\u0131s\u0131 ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Turkish"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "small"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "large"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Warna langit pada siang hari adalah ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Indonesian"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "colour"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "sky"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "blue"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Huvudstaden i Japan \u00e4r ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Swedish"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "capital"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "Japan"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "Tokyo"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Opak slova \"tich\u00fd\" je ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Czech"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "quiet"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "loud"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "O versiune mai mare a unui sat se nume\u0219te ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Romanian"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "bigger-version"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "village"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "city"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Lo opuesto de \"r\u00e1pido\" es ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "Spanish"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "fast"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "slow"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Le contraire de \"chaud\" est ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "French"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "hot"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "cold"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Das Gegenteil von \"hell\" ist ",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "language",
+     "accept": [
+      "German"
+     ]
+    },
+    {
+     "name": "relation",
+     "accept": [
+      "antonym"
+     ]
+    },
+    {
+     "name": "english input",
+     "accept": [
+      "bright"
+     ]
+    },
+    {
+     "name": "english output",
+     "accept": [
+      "dark"
+     ]
+    }
+   ]
+  }
+ ]
+}

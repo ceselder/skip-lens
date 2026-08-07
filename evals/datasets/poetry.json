@@ -1,0 +1,735 @@
+{
+ "name": "poetry",
+ "n": 52,
+ "spec": "Gurnee et al. A.6, rebuilt to spec",
+ "items": [
+  {
+   "prompt": "The sailor gazed out at the endless deep blue sea,\n",
+   "answer": "be",
+   "full_line2": "and knew that no other place was where he longed to be",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "be"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "She blew out every candle on her birthday cake,\n",
+   "answer": "wake",
+   "full_line2": "and wished for just one gift to get when she would wake",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "wake"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The old man carved his initials into the oak tree's bark,\n",
+   "answer": "dark",
+   "full_line2": "then trudged back down the winding path before the falling dark",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "dark"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The children pressed their faces to the cold and frosted glass,\n",
+   "answer": "grass",
+   "full_line2": "and watched the white-tailed deer step gently through the frozen grass",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "grass"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "He searched through every pocket but his wallet was not there,\n",
+   "answer": "stair",
+   "full_line2": "then found it on the nightstand at the bottom of the stair",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "stair"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The thunder shook the windows and the lights began to fail,\n",
+   "answer": "gale",
+   "full_line2": "and through the howling darkness came the fury of the gale",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "gale"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The baker pulled a golden loaf straight from the roaring fire,\n",
+   "answer": "desire",
+   "full_line2": "and set it on the sill to cool at the customer's desire",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "desire"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The kitten batted softly at the bobbing ball of string,\n",
+   "answer": "ring",
+   "full_line2": "and tumbled off the cushion in a tiny little ring",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "ring"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "He climbed the rickety ladder to the rooftop in the rain,\n",
+   "answer": "plain",
+   "full_line2": "and hammered down the loose tile once and then he nailed it plain",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "plain"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The doctor told her sternly she should stay in bed and rest,\n",
+   "answer": "best",
+   "full_line2": "but she was up by morning since she simply knew it best",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "best"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The knight knelt down before the queen and bowed his weary head,\n",
+   "answer": "bled",
+   "full_line2": "and swore to guard her kingdom till the very day he bled",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "bled"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The autumn leaves came drifting down in carpets red and brown,\n",
+   "answer": "town",
+   "full_line2": "and settled on the empty benches all across the town",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "town"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The sailor gazed at stars that filled the night,\n",
+   "answer": "light",
+   "full_line2": "and steered his ship toward the distant light",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "light"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "She wrapped the gift in paper, red and green,\n",
+   "answer": "seen",
+   "full_line2": "the prettiest present anyone had ever seen",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "seen"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The hungry child reached up to grab the plum,\n",
+   "answer": "numb",
+   "full_line2": "and stuffed her cheeks until her lips went numb",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "numb"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The old clock tower rang out at half past eight,\n",
+   "answer": "late",
+   "full_line2": "and every rushing commuter arrived too late",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "late"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The baker pulled fresh loaves out of the oven,\n",
+   "answer": "seven",
+   "full_line2": "and counted up the rolls until she'd counted seven",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "seven"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The kitten batted softly at the string,\n",
+   "answer": "thing",
+   "full_line2": "delighted by that small and dangling thing",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "thing"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The mountain road was slick with morning frost,\n",
+   "answer": "lost",
+   "full_line2": "and three unlucky hikers quickly became lost",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "lost"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "He whispered that he loved her in the dark,\n",
+   "answer": "bark",
+   "full_line2": "and carved their names together in the bark",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "bark"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The teacher wrote the answer on the board,\n",
+   "answer": "ignored",
+   "full_line2": "while every bored and sleepy student simply ignored",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "ignored"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The rain came down and flooded every street,\n",
+   "answer": "feet",
+   "full_line2": "and soaked the shoes right off of people's feet",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "feet"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The young prince drew his sword without a sound,\n",
+   "answer": "ground",
+   "full_line2": "and drove the blade into the frozen ground",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "ground"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The sailor gazed upon the open sea,\n",
+   "answer": "be",
+   "full_line2": "and longed for home, where he had wished to be",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "be"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "She wrapped the gift in paper, red and white,\n",
+   "answer": "night",
+   "full_line2": "and placed it by the tree on Christmas night",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "night"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The old man slowly climbed the creaking stair,\n",
+   "answer": "air",
+   "full_line2": "and paused to catch his breath and gasp for air",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "air"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The hungry fox crept through the autumn wood,\n",
+   "answer": "stood",
+   "full_line2": "and snatched the berries where the brambles stood",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "stood"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The candle flickered as the cold wind blew,\n",
+   "answer": "new",
+   "full_line2": "and cast the room in shadow, strange and new",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "new"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The baker pulled the loaves from scorching heat,\n",
+   "answer": "street",
+   "full_line2": "and set them out to cool along the street",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "street"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The child pressed her nose against the glass,\n",
+   "answer": "pass",
+   "full_line2": "and watched the snowy winter slowly pass",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "pass"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The thunder cracked across the stormy sky,\n",
+   "answer": "fly",
+   "full_line2": "and startled every flock of birds nearby to fly",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "fly"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The knight knelt down before his weeping queen,\n",
+   "answer": "clean",
+   "full_line2": "and swore that he would keep his sword and honor clean",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "clean"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The river rushed through boulders, cold and deep,\n",
+   "answer": "sleep",
+   "full_line2": "and lulled the exhausted shepherd off to sleep",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "sleep"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "She planted seeds in rows of dark brown earth,\n",
+   "answer": "birth",
+   "full_line2": "and waited for the spring to bring new birth",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "birth"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The sailor watched the storm clouds gather overhead with dread,\n",
+   "answer": "bed",
+   "full_line2": "he checked the anchor twice and then went straight to bed",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "bed"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "She wrapped the gift in silver paper, tied it with a bow,\n",
+   "answer": "glow",
+   "full_line2": "then placed it by the window where the Christmas lights would glow",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "glow"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The baker pulled fresh loaves of bread out from the oven's heat,\n",
+   "answer": "beat",
+   "full_line2": "the whole street filled with fragrance and the smell was hard to beat",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "beat"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "He climbed the tallest mountain just to stand upon the peak,\n",
+   "answer": "weep",
+   "full_line2": "the view was so magnificent it made him want to weep",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "weep"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The children chased the fireflies all dancing through the night,\n",
+   "answer": "light",
+   "full_line2": "their little jars were filling up with specks of golden light",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "light"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The old clock on the mantelpiece had chimed the hour of three,\n",
+   "answer": "tea",
+   "full_line2": "she poured herself a chamomile and settled in for tea",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "tea"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The gardener planted roses in a long and winding row,\n",
+   "answer": "grow",
+   "full_line2": "she watered them each morning watching how the petals grow",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "grow"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The puppy knocked the vase down with a wag of its long tail,\n",
+   "answer": "trail",
+   "full_line2": "the flowers scattered everywhere across the path and trail",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "trail"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "He wrote her name in careful letters carved into the oak,\n",
+   "answer": "spoke",
+   "full_line2": "the tree held every secret and it never ever spoke",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "spoke"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The astronaut looked down at Earth and felt completely small,\n",
+   "answer": "all",
+   "full_line2": "the oceans and the continents were visible to all",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "all"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The candle on the windowsill was melting through the night,\n",
+   "answer": "sight",
+   "full_line2": "by morning just a puddle of cold wax was left in sight",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "sight"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The fisherman cast out his line and waited on the dock,\n",
+   "answer": "clock",
+   "full_line2": "the hours passed in silence and he barely watched the clock",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "clock"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The sailor watched the sun sink into the sea,\n",
+   "answer": "free",
+   "full_line2": "and knew that his long voyage had finally set him free",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "free"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "She blew out every candle on her birthday cake,\n",
+   "answer": "make",
+   "full_line2": "and wished for all the joy that life could possibly make",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "make"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The old man sat and rocked beside the fire,\n",
+   "answer": "tire",
+   "full_line2": "his bones too cold and weary to ever tire",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "tire"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The children raced barefoot across the summer grass,\n",
+   "answer": "pass",
+   "full_line2": "and watched their golden afternoons too quickly pass",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "pass"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "He typed the final sentence of his book,\n",
+   "answer": "look",
+   "full_line2": "then leaned back in his chair and took one last long look",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "look"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The baker pulled fresh loaves out of the oven's heat,\n",
+   "answer": "sweet",
+   "full_line2": "and filled the morning air with something warm and sweet",
+   "intermediates": [
+    {
+     "name": "rhyme word",
+     "accept": [
+      "sweet"
+     ]
+    }
+   ],
+   "read_position": "last"
+  }
+ ]
+}

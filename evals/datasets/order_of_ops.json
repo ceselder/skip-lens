@@ -1,0 +1,1327 @@
+{
+ "name": "order_of_ops",
+ "n": 55,
+ "spec": "Gurnee et al. A.6, rebuilt to spec",
+ "items": [
+  {
+   "prompt": "Calculate: (7 - 5) x 4 = ",
+   "answer": "8",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "2",
+      "two"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (4 + 3) x 6 = ",
+   "answer": "42",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "7",
+      "seven"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (6 - 3) x 3 = ",
+   "answer": "9",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "3",
+      "three"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (9 - 3) x 7 = ",
+   "answer": "42",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "6",
+      "six"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (7 - 5) x 9 = ",
+   "answer": "18",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "2",
+      "two"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (6 + 2) x 2 = ",
+   "answer": "16",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "8",
+      "eight"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (8 - 2) x 9 = ",
+   "answer": "54",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "6",
+      "six"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (5 + 7) x 3 = ",
+   "answer": "36",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "12",
+      "twelve"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (3 + 6) x 6 = ",
+   "answer": "54",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "9",
+      "nine"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (7 - 5) x 6 = ",
+   "answer": "12",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "2",
+      "two"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (3 + 8) x 7 = ",
+   "answer": "77",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "11",
+      "eleven"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (6 + 4) x 5 = ",
+   "answer": "50",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "10",
+      "ten"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (2 + 6) x 9 = ",
+   "answer": "72",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "8",
+      "eight"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (3 + 4) x 4 = ",
+   "answer": "28",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "7",
+      "seven"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (3 + 8) x 6 = ",
+   "answer": "66",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "11",
+      "eleven"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (9 - 7) x 3 = ",
+   "answer": "6",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "2",
+      "two"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (3 + 9) x 7 = ",
+   "answer": "84",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "12",
+      "twelve"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (5 + 2) x 6 = ",
+   "answer": "42",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "7",
+      "seven"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (8 + 2) x 3 = ",
+   "answer": "30",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "10",
+      "ten"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (5 + 2) x 3 = ",
+   "answer": "21",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "7",
+      "seven"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (3 + 7) x 3 = ",
+   "answer": "30",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "10",
+      "ten"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (2 + 5) x 4 = ",
+   "answer": "28",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "7",
+      "seven"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (9 + 5) x 2 = ",
+   "answer": "28",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "14",
+      "fourteen"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (8 + 3) x 6 = ",
+   "answer": "66",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "11",
+      "eleven"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (5 - 3) x 6 = ",
+   "answer": "12",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "2",
+      "two"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (8 - 4) x 2 = ",
+   "answer": "8",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "4",
+      "four"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (2 + 3) x 8 = ",
+   "answer": "40",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "5",
+      "five"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (6 + 7) x 9 = ",
+   "answer": "117",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "13",
+      "thirteen"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (5 + 2) x 4 = ",
+   "answer": "28",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "7",
+      "seven"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (4 - 2) x 9 = ",
+   "answer": "18",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "2",
+      "two"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (4 + 2) x 9 = ",
+   "answer": "54",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "6",
+      "six"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (7 + 2) x 6 = ",
+   "answer": "54",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "9",
+      "nine"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (7 - 4) x 6 = ",
+   "answer": "18",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "3",
+      "three"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (8 + 3) x 2 = ",
+   "answer": "22",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "11",
+      "eleven"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (7 + 4) x 5 = ",
+   "answer": "55",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "11",
+      "eleven"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (9 + 8) x 8 = ",
+   "answer": "136",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "17",
+      "seventeen"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (8 + 8) x 2 = ",
+   "answer": "32",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "16",
+      "sixteen"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (9 + 3) x 6 = ",
+   "answer": "72",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "12",
+      "twelve"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (9 + 9) x 2 = ",
+   "answer": "36",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "18",
+      "eighteen"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (9 - 7) x 6 = ",
+   "answer": "12",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "2",
+      "two"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (2 + 8) x 5 = ",
+   "answer": "50",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "10",
+      "ten"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (4 - 2) x 8 = ",
+   "answer": "16",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "2",
+      "two"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (7 + 2) x 5 = ",
+   "answer": "45",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "9",
+      "nine"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (2 + 3) x 5 = ",
+   "answer": "25",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "5",
+      "five"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (5 + 6) x 6 = ",
+   "answer": "66",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "11",
+      "eleven"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (3 + 9) x 8 = ",
+   "answer": "96",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "12",
+      "twelve"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (6 + 4) x 7 = ",
+   "answer": "70",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "10",
+      "ten"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (4 + 6) x 2 = ",
+   "answer": "20",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "10",
+      "ten"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (7 - 2) x 9 = ",
+   "answer": "45",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "5",
+      "five"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (8 + 7) x 4 = ",
+   "answer": "60",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "15",
+      "fifteen"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (8 + 6) x 2 = ",
+   "answer": "28",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "14",
+      "fourteen"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (7 + 3) x 7 = ",
+   "answer": "70",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "10",
+      "ten"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (2 + 6) x 4 = ",
+   "answer": "32",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "8",
+      "eight"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (6 + 7) x 8 = ",
+   "answer": "104",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "13",
+      "thirteen"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "Calculate: (6 + 3) x 9 = ",
+   "answer": "81",
+   "intermediates": [
+    {
+     "name": "partial result",
+     "accept": [
+      "9",
+      "nine"
+     ]
+    },
+    {
+     "name": "pending operation",
+     "accept": [
+      "multiplication",
+      "multiply",
+      "times",
+      "x",
+      "product"
+     ]
+    }
+   ],
+   "read_position": "last"
+  }
+ ]
+}

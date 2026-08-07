@@ -1,0 +1,29 @@
+{
+  "_meta": {
+    "base": "Qwen/Qwen3.6-27B",
+    "target_block": 62,
+    "d_model": 5120,
+    "injection_char": "㈜",
+    "injection_token_id": 158983,
+    "injection_note": "authoritative id is 158983; readout_naive.py resolves char/id via nla find_injection_token(tok) at runtime, matching training",
+    "actor_template": "You are shown an internal activation vector captured from a language model as it reads a passage of text. The vector, enclosed in <concept> tags, is taken at one position and encodes what the model is about to generate next. Output the text the model most likely produces immediately after this point.\n\n<concept>{injection_char}</concept>",
+    "jlens_dir_rel": "jlens",
+    "jlens_source_layers": [20, 26, 32, 38, 42, 48, 54],
+    "note": "All AVs inject a norm-matched activation at the injection token via the nla Karvonen hook and generate a short continuation; K sampled continuations are the K bullets the intermediate-judge scores. 'raw' feeds h read at native_layer; 'jacobian' feeds J_{src->62}.h_src (block-62 basis) and is only defined for AVs that target block 62. ckpt paths are <ckpt_root>/<dir>/<iter>."
+  },
+  "variants": {
+    "naive_fl_L58":      {"dir": "av_flv4_L58",      "iter": "iter_0001000", "kind": "naive_fl", "native_layer": 58, "targets_block62": true},
+    "naive_fl_L60":      {"dir": "av_flv4_L60",      "iter": "iter_0001000", "kind": "naive_fl", "native_layer": 60, "targets_block62": true},
+    "naive_fl_L61":      {"dir": "av_flv4_L61",      "iter": "iter_0001000", "kind": "naive_fl", "native_layer": 61, "targets_block62": true},
+    "naive_fl_L62":      {"dir": "av_flv4_L62",      "iter": "iter_0001000", "kind": "naive_fl", "native_layer": 62, "targets_block62": true},
+    "naive_fl_L63":      {"dir": "av_flv4_L63",      "iter": "iter_0001000", "kind": "naive_fl", "native_layer": 63, "targets_block62": true},
+    "naive_fl_L62_long": {"dir": "av_flv4_L62_long", "iter": "iter_0002500", "kind": "naive_fl", "native_layer": 62, "targets_block62": true},
+    "naive_fl_L62_v1":   {"dir": "av_fl_L62",        "iter": "iter_0001500", "kind": "naive_fl", "native_layer": 62, "targets_block62": true},
+    "ao_L58":            {"dir": "ao_v4_L58",        "iter": "iter_0001000", "kind": "ao",       "native_layer": 58, "targets_block62": true},
+    "ao_L60":            {"dir": "ao_v4_L60",        "iter": "iter_0001000", "kind": "ao",       "native_layer": 60, "targets_block62": true},
+    "ao_L61":            {"dir": "ao_v4_L61",        "iter": "iter_0001000", "kind": "ao",       "native_layer": 61, "targets_block62": true},
+    "ao_L62":            {"dir": "ao_v4_L62",        "iter": "iter_0001000", "kind": "ao",       "native_layer": 62, "targets_block62": true},
+    "ao_L63":            {"dir": "ao_v4_L63",        "iter": "iter_0001000", "kind": "ao",       "native_layer": 63, "targets_block62": true},
+    "rl_L62":            {"dir": "rl_ae_L62",        "iter": "iter_000200",  "kind": "rl",       "native_layer": 62, "targets_block62": true}
+  }
+}

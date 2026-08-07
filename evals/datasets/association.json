@@ -1,0 +1,657 @@
+{
+ "name": "association",
+ "n": 50,
+ "spec": "Gurnee et al. A.6, rebuilt to spec",
+ "items": [
+  {
+   "prompt": "He refreshed the inbox again, then again, then closed the laptop and opened it immediately, as if the answer he needed might arrive in the half-second the screen was dark.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "anxiety"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "She clapped the loudest when her sister crossed the stage, gripping her program so tightly the edges curled, smiling at everyone who looked her way.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "jealousy"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Every September he drove the long way home just to pass the school, slowing near the oak where the crossing guard used to stand.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "nostalgia"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "She laughed at his jokes the same as always, passed the salt without being asked, and never once mentioned she had read the message.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "betrayal"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "He set two placemats out of habit, caught himself, folded one back into the drawer, then ate standing at the counter instead.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "loneliness"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "She let them finish telling the story about the summit before mentioning, quietly, that she had reached it first, two years ago, in February.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "pride"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "He bought the same brand of orange juice she had preferred and let it expire at the back of the fridge, untouched, three times running.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "grief"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "She returned the twenty dollars before he noticed it was missing, tucking it into his jacket pocket and saying nothing for the rest of the week.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "guilt"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "He checked the flight status before bed, then once more at midnight, then left his shoes by the door so he would not have to look for them in the morning.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "dread"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "She answered his calls now, short and polite at first, then longer, until one afternoon she found herself laughing at something he said and did not apologize for it.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "forgiveness"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "She took every extra shift, enrolled in the night class, and introduced herself at the party using the title she did not yet hold.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "ambition"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "He kept the receipt for the jacket he never bought her folded inside his wallet, soft at the creases now, unspendable.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "regret"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "He refreshed the inbox again, then again, then closed the laptop and opened it thirty seconds later, hands not quite steady.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "anticipation"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "She laughed a little too loudly at his joke, then spent the drive home listing every word she had said wrong.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "insecurity"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Every night he set two glasses on the table before remembering, then stood there a moment before putting one back.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "grief"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "She watched her sister open the promotion letter, smiled wide, and went to the bathroom to sit on the cold floor for a while.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "jealousy"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "He still knew the bus route by heart, could name every stop, though the city had rerouted it nine years ago.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "nostalgia"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "She answered every question he asked her, clearly, completely, and never once looked at his face while she spoke.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "guilt"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "He ate dinner at the counter, television on full volume, and still heard the particular silence of the second bedroom.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "loneliness"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "She pressed her daughter's medal flat against her palm on the train home, not showing anyone, just holding it.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "pride"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "He called his mother after the diagnosis was cleared and talked about the weather for twenty minutes, voice bright and unsteady.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "relief"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "She used to call him when she needed someone; now she scrolled to his name, watched it sit there, and put the phone face-down.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "betrayal"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "He signed up for the six a.m. shift, took the unpaid course on weekends, and introduced himself to everyone senior to him in the room.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "ambition"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "She kept the acceptance letter in a drawer she never opened, beneath things she no longer needed but could not throw away.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "regret"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "He refreshed the inbox every few minutes, not because he expected anything, but because the small act kept the possibility alive.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "hope"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "She laughed loudest at his jokes when the new colleague was watching, and touched his arm a half-second too long.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "jealousy"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "He drove the long way home just to pass the house with the yellow door, the one that had belonged to his grandmother.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "nostalgia"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "She told the story at dinner as though it had happened to a friend, watching her mother's face for the exact moment recognition landed.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "guilt"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "He set the alarm fifteen minutes early every day for a year and then quietly stopped setting it at all.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "ambition"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "She read the apology twice, folded it, and put it in the drawer with his letters instead of the bin.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "forgiveness"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "He stood at the edge of every group photo, hands in pockets, already half-turned toward the door before the shutter clicked.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "loneliness"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "She checked the lock three times, then stood in the dark hallway listening to a silence she couldn't quite trust.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "dread"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "He wore the tie to the school run, even though no one there knew he had been promoted.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "pride"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "She kept the ticket stub from a city she never went back to in the pocket of a coat she still wore.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "regret"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "He told the new version so many times he had almost stopped remembering the afternoon he agreed and then said nothing.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "betrayal"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "She exhaled slowly in the car park, hands still gripping the wheel, before going back inside to be normal again.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "relief"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "She refreshed the page again, counted the names below hers, and opened a new tab to check whether the committee chair had posted anything recently.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "ambition"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "He laughed at the joke a half-second after everyone else, watching their faces first to make sure it was the right kind of laugh.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "insecurity"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Every few blocks she slowed down without meaning to, glancing at doorways she had no reason to enter, reading menus of restaurants she would never visit.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "loneliness"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "He kept the receipt in his wallet for six weeks, folded so small the numbers were nearly invisible, moving it from one card slot to another each time he switched wallets.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "guilt"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "She stood a little straighter when her daughter's name appeared on the screen, and had to press her lips together before she could say anything at all.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "pride"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "He booked the flights, then cancelled them, then looked up the departure times again at two in the morning just to feel the possibility sitting there.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "hope"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "She sat very still while her sister described the holiday, nodding at the photographs, asking one careful question about a restaurant she already knew she would never go to.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "jealousy"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "He answered her call on the first ring, said it was fine, said really it was fine, and after they hung up sat with the phone face-down on the table for a long time.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "forgiveness"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "She pulled the old playlist up, didn't press play, just scrolled the song titles slowly with her thumb the way you'd run a hand along a fence you used to climb.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "nostalgia"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "He drove the long way home every evening that week, arriving just after the meeting would have ended, always surprised to find the lights already off.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "dread"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "She put his letters in a box, moved the box to the garage, then brought it inside again and put it on the same shelf but behind the encyclopedias.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "betrayal"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "He ordered the thing he had almost ordered for thirty years, ate it slowly, and did not look up when the waiter asked if everything was all right.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "regret"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "He checked the door lock three times, then checked it again from the car, then sat in the parking lot for six minutes before finally driving away.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "anxiety"
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "She laughed a little too loudly at his joke, then went quiet watching his hand rest near the other woman's wrist.",
+   "answer": null,
+   "read_position": "last",
+   "intermediates": [
+    {
+     "name": "implied concept",
+     "accept": [
+      "jealousy"
+     ]
+    }
+   ]
+  }
+ ]
+}

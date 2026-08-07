@@ -1,0 +1,1387 @@
+{
+ "name": "typo",
+ "n": 92,
+ "spec": "Gurnee et al. A.6, rebuilt to spec",
+ "items": [
+  {
+   "word": "language",
+   "misspelling": "langugae",
+   "kind": "transpose",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "language"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "Children who grow up in bilingual households often find it easier to learn a third langugae"
+  },
+  {
+   "word": "believe",
+   "misspelling": "beleive",
+   "kind": "transpose",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "believe"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "After seeing the evidence laid out so clearly before him, he had no choice but to beleive"
+  },
+  {
+   "word": "separate",
+   "misspelling": "sepaate",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "separate"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The teacher asked the two students who kept whispering to each other to sit sepaate"
+  },
+  {
+   "word": "definitely",
+   "misspelling": "definiteely",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "definitely"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "After tasting the rich chocolate cake and seeing her friend's expression, she knew she would order it definiteely"
+  },
+  {
+   "word": "receive",
+   "misspelling": "rceeive",
+   "kind": "transpose",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "receive"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "She checked her mailbox every morning hoping that today would be the day she would finally rceeive"
+  },
+  {
+   "word": "occurred",
+   "misspelling": "ocurred",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "occurred"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "Investigators were puzzled because no one in the neighborhood had reported anything unusual on the night the crime ocurred"
+  },
+  {
+   "word": "beginning",
+   "misspelling": "begining",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "beginning"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The soft notes of the piano and the gradual rise of the curtain signaled that the show was begining"
+  },
+  {
+   "word": "government",
+   "misspelling": "goovernment",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "government"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "Citizens gathered in the square to protest the new policies introduced by the goovernment"
+  },
+  {
+   "word": "restaurant",
+   "misspelling": "restaurannt",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "restaurant"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "After the movie ended they were all hungry and decided to find a nearby restaurannt"
+  },
+  {
+   "word": "beautiful",
+   "misspelling": "beautiul",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "beautiful"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "As the sun sank below the mountains and painted the sky in shades of orange and pink, the scene was beautiul"
+  },
+  {
+   "word": "environment",
+   "misspelling": "enivronment",
+   "kind": "transpose",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "environment"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "Scientists have long argued that cleaning up pollution in rivers and forests is essential for preserving the enivronment"
+  },
+  {
+   "word": "knowledge",
+   "misspelling": "kowledge",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "knowledge"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "She spent years reading, studying, and traveling the world in her relentless pursuit of kowledge"
+  },
+  {
+   "word": "experience",
+   "misspelling": "epxerience",
+   "kind": "transpose",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "experience"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "After decades of working in emergency medicine, she brought an invaluable depth of epxerience"
+  },
+  {
+   "word": "different",
+   "misspelling": "differrent",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "different"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "Although the twins looked identical at first glance, their personalities could not have been more differrent"
+  },
+  {
+   "word": "important",
+   "misspelling": "impotrant",
+   "kind": "transpose",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "important"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "Getting enough sleep each night, doctors consistently remind us, is genuinely impotrant"
+  },
+  {
+   "word": "available",
+   "misspelling": "avaailable",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "available"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "She checked the hotel website three times before confirming that a room for Saturday was actually avaailable"
+  },
+  {
+   "word": "particular",
+   "misspelling": "prticular",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "particular"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "Among all the paintings in the museum, he found himself drawn back repeatedly to one in prticular"
+  },
+  {
+   "word": "immediately",
+   "misspelling": "immeddiately",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "immediately"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "When the fire alarm sounded, the staff followed protocol and evacuated the building immeddiately"
+  },
+  {
+   "word": "successful",
+   "misspelling": "successfl",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "successful"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "After years of rejection letters and near misses, her third novel was finally wildly successfl"
+  },
+  {
+   "word": "temperature",
+   "misspelling": "tempeerature",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "temperature"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The nurse checked on the feverish child every hour throughout the night to monitor his tempeerature"
+  },
+  {
+   "word": "opportunity",
+   "misspelling": "oppotunity",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "opportunity"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "Moving to the city for graduate school turned out to be the best professional oppotunity"
+  },
+  {
+   "word": "committee",
+   "misspelling": "commmittee",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "committee"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The final decision on the proposed budget cuts would rest with the newly formed oversight commmittee"
+  },
+  {
+   "word": "recommend",
+   "misspelling": "recmmend",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "recommend"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "Having eaten at the restaurant twice and loved every dish, she was happy to recmmend"
+  },
+  {
+   "word": "accommodate",
+   "misspelling": "accommoadte",
+   "kind": "transpose",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "accommodate"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The event organizers worked through the night rearranging the venue layout to accommoadte"
+  },
+  {
+   "word": "embarrass",
+   "misspelling": "embarraass",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "embarrass"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "She warned him that bringing up his ex-girlfriend's name at the dinner table would only embarraass"
+  },
+  {
+   "word": "millennium",
+   "misspelling": "milelnnium",
+   "kind": "transpose",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "millennium"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "People around the world gathered to celebrate the dawn of a new milelnnium"
+  },
+  {
+   "word": "conscience",
+   "misspelling": "consciience",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "conscience"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "He lay awake at night, unable to sleep because of his guilty consciience"
+  },
+  {
+   "word": "rhythm",
+   "misspelling": "rhyhtm",
+   "kind": "transpose",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "rhythm"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The drummer tapped his foot and counted silently before settling into a steady rhyhtm"
+  },
+  {
+   "word": "vacuum",
+   "misspelling": "vacuuum",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "vacuum"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "She decided the living room carpet was overdue for a thorough vacuuum"
+  },
+  {
+   "word": "calendar",
+   "misspelling": "calendaar",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "calendar"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "He flipped through the pages and circled the important dates on his calendaar"
+  },
+  {
+   "word": "grateful",
+   "misspelling": "graetful",
+   "kind": "transpose",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "grateful"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "After everything her neighbors had done during the storm, she felt deeply graetful"
+  },
+  {
+   "word": "existence",
+   "misspelling": "existnce",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "existence"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "Philosophers have spent centuries debating the very nature and purpose of human existnce"
+  },
+  {
+   "word": "maintenance",
+   "misspelling": "maintenane",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "maintenance"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The building manager reminded all tenants that the elevators would be shut down for routine maintenane"
+  },
+  {
+   "word": "privilege",
+   "misspelling": "priviege",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "privilege"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "Growing up with access to good schools and healthy food is an enormous priviege"
+  },
+  {
+   "word": "questionnaire",
+   "misspelling": "questionanire",
+   "kind": "transpose",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "questionnaire"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "Before seeing the doctor, every new patient was asked to fill out a detailed questionanire"
+  },
+  {
+   "word": "surprise",
+   "misspelling": "surpries",
+   "kind": "transpose",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "surprise"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "She kept the party details completely secret because she wanted it to be a genuine surpries"
+  },
+  {
+   "word": "argument",
+   "misspelling": "arguent",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "argument"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "After hours of debate, neither side could agree, and the discussion dissolved into a heated arguent"
+  },
+  {
+   "word": "familiar",
+   "misspelling": "fammiliar",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "familiar"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "She had visited the old neighborhood so many times that every street and corner felt completely fammiliar"
+  },
+  {
+   "word": "foreign",
+   "misspelling": "forein",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "foreign"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "Having grown up in a small town, the busy city streets and unfamiliar customs felt entirely forein"
+  },
+  {
+   "word": "harass",
+   "misspelling": "haraass",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "harass"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The new workplace policy made it explicitly clear that no employee was permitted to bully or haraass"
+  },
+  {
+   "word": "independent",
+   "misspelling": "independnet",
+   "kind": "transpose",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "independent"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "After years of relying on her parents for financial support, she finally felt truly independnet"
+  },
+  {
+   "word": "jewelry",
+   "misspelling": "jewelrry",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "jewelry"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "She opened the velvet box to find a stunning necklace and matching earrings, exquisite jewelrry"
+  },
+  {
+   "word": "leisure",
+   "misspelling": "lesiure",
+   "kind": "transpose",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "leisure"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "With the project finally finished and the weekend ahead, he looked forward to some well-earned lesiure"
+  },
+  {
+   "word": "medieval",
+   "misspelling": "medieeval",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "medieval"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The thick stone walls, narrow arrow slits, and towering battlements made the castle unmistakably medieeval"
+  },
+  {
+   "word": "noticeable",
+   "misspelling": "noticeabe",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "noticeable"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "After just two weeks of training, the improvement in her speed and endurance was clearly noticeabe"
+  },
+  {
+   "word": "occasion",
+   "misspelling": "occcasion",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "occasion"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "They reserved the finest restaurant in the city for what everyone agreed was a truly special occcasion"
+  },
+  {
+   "word": "parallel",
+   "misspelling": "prallel",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "parallel"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The two rivers flowed in the same direction through the valley, running almost exactly prallel"
+  },
+  {
+   "word": "personnel",
+   "misspelling": "personel",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "personnel"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The general reviewed the list of soldiers and immediately requested a full report on all available military personel"
+  },
+  {
+   "word": "possession",
+   "misspelling": "possessiion",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "possession"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "After the long legal battle, the court finally awarded her full ownership and legal possessiion"
+  },
+  {
+   "word": "preferred",
+   "misspelling": "preeferred",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "preferred"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "When asked whether she wanted coffee or tea, she smiled and said tea was strongly preeferred"
+  },
+  {
+   "word": "pronunciation",
+   "misspelling": "pronunciaiton",
+   "kind": "transpose",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "pronunciation"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The language teacher spent the entire first class drilling students on the correct pronunciaiton"
+  },
+  {
+   "word": "publicly",
+   "misspelling": "pbulicly",
+   "kind": "transpose",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "publicly"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "Despite knowing the truth for months, the company's CEO refused to acknowledge the scandal pbulicly"
+  },
+  {
+   "word": "receipt",
+   "misspelling": "receitp",
+   "kind": "transpose",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "receipt"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The cashier handed back his change and reminded him to keep the receitp"
+  },
+  {
+   "word": "referred",
+   "misspelling": "refferred",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "referred"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "My doctor said the case was beyond her expertise and so she had me refferred"
+  },
+  {
+   "word": "relevant",
+   "misspelling": "relevnt",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "relevant"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "Before submitting your application, please make sure every document you include is directly relevnt"
+  },
+  {
+   "word": "religious",
+   "misspelling": "religios",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "religious"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The small village had a deeply traditional community whose daily life was entirely religios"
+  },
+  {
+   "word": "resistance",
+   "misspelling": "resistaance",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "resistance"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The invading army expected an easy victory but instead encountered fierce and unexpected resistaance"
+  },
+  {
+   "word": "restaurant",
+   "misspelling": "restarant",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "restaurant"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "After the movie ended they were all hungry and decided to find a nearby restarant"
+  },
+  {
+   "word": "schedule",
+   "misspelling": "scheduule",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "schedule"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The project manager sent everyone a detailed email outlining the revised and updated scheduule"
+  },
+  {
+   "word": "scissors",
+   "misspelling": "scissorrs",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "scissors"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "She carefully cut along the dotted line using a pair of scissorrs"
+  },
+  {
+   "word": "secretary",
+   "misspelling": "secrteary",
+   "kind": "transpose",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "secretary"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "All correspondence and scheduling for the department was handled by the secrteary"
+  },
+  {
+   "word": "sentence",
+   "misspelling": "sentennce",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "sentence"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The judge paused before announcing what would be a very lengthy sentennce"
+  },
+  {
+   "word": "similar",
+   "misspelling": "similra",
+   "kind": "transpose",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "similar"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The two paintings were created decades apart but their styles were remarkably similra"
+  },
+  {
+   "word": "sincerely",
+   "misspelling": "sinncerely",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "sincerely"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "She closed the letter by writing that she meant every word most sinncerely"
+  },
+  {
+   "word": "strength",
+   "misspelling": "srength",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "strength"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "After months of physical therapy he was slowly beginning to recover his srength"
+  },
+  {
+   "word": "succeed",
+   "misspelling": "suceed",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "succeed"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "With enough practice and determination there is no reason why she cannot suceed"
+  },
+  {
+   "word": "sufficient",
+   "misspelling": "suffiicient",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "sufficient"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The doctor confirmed that the patient had received a dose that was suffiicient"
+  },
+  {
+   "word": "suppress",
+   "misspelling": "supprress",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "suppress"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "No matter how hard he tried he could not manage to supprress"
+  },
+  {
+   "word": "surely",
+   "misspelling": "surly",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "surely"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "After everything she had sacrificed to get this far the effort would pay off surly"
+  },
+  {
+   "word": "threshold",
+   "misspelling": "thrshold",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "threshold"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "He stood nervously at the doorway for a long moment before crossing the thrshold"
+  },
+  {
+   "word": "tomorrow",
+   "misspelling": "tomororw",
+   "kind": "transpose",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "tomorrow"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "She packed her bags that evening because the long journey was set to begin tomororw"
+  },
+  {
+   "word": "tongue",
+   "misspelling": "tonggue",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "tongue"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "She burned the roof of her mouth trying to eat the soup too fast, and then burned her tonggue"
+  },
+  {
+   "word": "twelfth",
+   "misspelling": "twelfh",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "twelfth"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "He had already opened eleven doors in the Advent calendar and was eagerly reaching for the twelfh"
+  },
+  {
+   "word": "unnecessary",
+   "misspelling": "unneecssary",
+   "kind": "transpose",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "unnecessary"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The editor removed three whole paragraphs from the report because she felt the details were completely unneecssary"
+  },
+  {
+   "word": "until",
+   "misspelling": "unntil",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "until"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The children were not allowed to open any of their birthday presents from grandma unntil"
+  },
+  {
+   "word": "usually",
+   "misspelling": "usuallly",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "usually"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "He sometimes takes the bus when his car is in the shop, but he drives to work usuallly"
+  },
+  {
+   "word": "vehicle",
+   "misspelling": "vheicle",
+   "kind": "transpose",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "vehicle"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The police officer asked the nervous driver to step out of the vheicle"
+  },
+  {
+   "word": "visible",
+   "misspelling": "visiible",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "visible"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "On a clear night far from the city lights, thousands of stars become easily visiible"
+  },
+  {
+   "word": "weather",
+   "misspelling": "waether",
+   "kind": "transpose",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "weather"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The hikers checked the forecast before setting off because the mountain conditions depended entirely on the waether"
+  },
+  {
+   "word": "weird",
+   "misspelling": "wierd",
+   "kind": "transpose",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "weird"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "She had a dream about talking furniture and flying fish, which struck her as genuinely wierd"
+  },
+  {
+   "word": "whether",
+   "misspelling": "wether",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "whether"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "He stood at the crossroads for a long time, unable to decide wether"
+  },
+  {
+   "word": "writing",
+   "misspelling": "wrting",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "writing"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "She spent every morning before breakfast at her desk, working quietly on her wrting"
+  },
+  {
+   "word": "yacht",
+   "misspelling": "ycht",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "yacht"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The billionaire invited his closest friends to spend the summer sailing around the Mediterranean on his ycht"
+  },
+  {
+   "word": "acknowledge",
+   "misspelling": "acknnowledge",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "acknowledge"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "After making such a serious mistake in front of the whole team, the least he could do was acknnowledge"
+  },
+  {
+   "word": "acquire",
+   "misspelling": "acqire",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "acquire"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "She spent years saving money so that she could finally acqire"
+  },
+  {
+   "word": "address",
+   "misspelling": "adrdess",
+   "kind": "transpose",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "address"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The mayor stood at the podium and prepared to deliver her annual state of the city adrdess"
+  },
+  {
+   "word": "although",
+   "misspelling": "altthough",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "although"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The hike turned out to be far more rewarding than either of them had expected, altthough"
+  },
+  {
+   "word": "amateur",
+   "misspelling": "amatteur",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "amateur"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "Despite his obvious enthusiasm for photography, anyone could tell from the blurry results that he was still an amatteur"
+  },
+  {
+   "word": "apparent",
+   "misspelling": "apparennt",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "apparent"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "Once the test results came back and the data was spread across the table, the answer became apparennt"
+  },
+  {
+   "word": "appearance",
+   "misspelling": "appearane",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "appearance"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The shy young singer had been rehearsing for months before making her very first public appearane"
+  },
+  {
+   "word": "arctic",
+   "misspelling": "arcttic",
+   "kind": "double",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "arctic"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "The researchers packed their warmest gear before departing on their expedition to the arcttic"
+  },
+  {
+   "word": "athlete",
+   "misspelling": "athlte",
+   "kind": "omit",
+   "intermediates": [
+    {
+     "name": "intended word",
+     "accept": [
+      "athlete"
+     ]
+    }
+   ],
+   "read_position": "last",
+   "prompt": "Years of early mornings, strict diets, and relentless training had transformed the awkward teenager into a remarkable athlte"
+  }
+ ]
+}

@@ -1,0 +1,657 @@
+{
+ "name": "multihop",
+ "n": 50,
+ "spec": "Gurnee et al. A.6, rebuilt to spec",
+ "items": [
+  {
+   "prompt": "The native language of the author of Crime and Punishment is",
+   "answer": "Russian",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Dostoevsky"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The continent on which the world's longest river is located is",
+   "answer": "Africa",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Nile"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The element with atomic number 79 is a precious metal that is colored",
+   "answer": "yellow",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "gold"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The sport in which Michael Phelps won the most Olympic gold medals is",
+   "answer": "water",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "swimming"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The country whose capital city is also its largest port and sits at the mouth of the Tagus River is",
+   "answer": "Portugal",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Lisbon"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The organ in the human body that produces insulin is the",
+   "answer": "gland",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "pancreas"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The director of Schindler's List also directed a film about a great white shark called",
+   "answer": "Jaws",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Spielberg"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The author of the Iliad is credited with also composing the",
+   "answer": "Odyssey",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Homer"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The country that gifted the Statue of Liberty to the United States is",
+   "answer": "European",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "France"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The planet on which Olympus Mons, the tallest volcano in the solar system, sits is",
+   "answer": "red",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Mars"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The team that Wayne Gretzky played for when he broke the all-time NHL scoring record is the",
+   "answer": "Edmonton",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Oilers"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The material from which the Parthenon in Athens was primarily constructed is",
+   "answer": "white",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "marble"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The chemical symbol for the element whose atomic number is 79 is",
+   "answer": "Au",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "gold"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The capital city of the country that won the 2018 FIFA World Cup is",
+   "answer": "Paris",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "France"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The author of the novel featuring the whale called Moby Dick wrote under the first name",
+   "answer": "Herman",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Melville"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The continent on which the world's longest river is located is",
+   "answer": "Africa",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Nile"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The director of the film in which Jodie Foster played Clarice Starling is",
+   "answer": "Demme",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Lambs"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The element that has the chemical symbol Fe and is the main component of steel is",
+   "answer": "Fe",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "iron"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The mountain range that contains the peak known as the roof of the world is the",
+   "answer": "Himalayas",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Everest"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The chemical symbol for the element whose atomic number is 79 is",
+   "answer": "Au",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "gold"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The continent on which the country whose capital is Nairobi is located is",
+   "answer": "Africa",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Kenya"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The author of the novel featuring the character Jay Gatsby wrote under the first name",
+   "answer": "Francis",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Fitzgerald"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The gas giant that has the most moons in our solar system is named after the Roman god",
+   "answer": "Jupiter",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Saturn"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The director of Schindler's List also directed the film whose shark terrorized the town of",
+   "answer": "Amity",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Spielberg"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The mountain range that contains the peak first summited by Edmund Hillary forms the border of Nepal and",
+   "answer": "China",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Everest"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The playwright who wrote Hamlet also wrote the tragedy whose title character is the Moor of",
+   "answer": "Venice",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Shakespeare"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The river that flows through the city where the Eiffel Tower stands empties into the",
+   "answer": "Atlantic",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Seine"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The native language of the author of Don Quixote is",
+   "answer": "Spanish",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Cervantes"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The continent on which the world's longest river is located is",
+   "answer": "Africa",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Nile"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The chemical symbol of the most abundant metal in Earth's crust is",
+   "answer": "Al",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "aluminum"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The director of the film in which Jodie Foster played Clarice Starling is",
+   "answer": "Demme",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Lambs"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The element whose atomic number equals the number of players on a standard soccer team is",
+   "answer": "sodium",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "eleven"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The ocean bordering the country whose capital is Buenos Aires is the",
+   "answer": "Atlantic",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Argentina"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The author of the novel whose protagonist is named Holden Caulfield is",
+   "answer": "Salinger",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Catcher"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The mountain range in which the highest peak on Earth is found is the",
+   "answer": "Himalayas",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Everest"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The nationality of the painter who created The Starry Night is",
+   "answer": "Dutch",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Gogh"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The gas giant known for a Great Red Spot has the roman numeral position from the Sun of",
+   "answer": "five",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Jupiter"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The native language of the author of Don Quixote is",
+   "answer": "Spanish",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Cervantes"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The continent containing the country whose flag features a maple leaf is",
+   "answer": "North America",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Canada"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The element with the atomic number equal to the number of players on a standard soccer team is",
+   "answer": "sodium",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "eleven"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The ocean bordered by the country that hosted the 1968 Summer Olympics is",
+   "answer": "Pacific",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Mexico"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The nationality of the director who made Schindler's List is",
+   "answer": "American",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Spielberg"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The mountain range containing the highest peak on Earth is",
+   "answer": "Himalayas",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Everest"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The chemical symbol of the metal from which the Statue of Liberty is primarily made is",
+   "answer": "Cu",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "copper"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The country where the author of the Iliad is believed to have been born is",
+   "answer": "Greece",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Homer"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The planet on which the largest volcano in the solar system is located is",
+   "answer": "Mars",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Olympus"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The river on which the city that hosted the 1936 Summer Olympics sits is",
+   "answer": "Spree",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Berlin"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The author whose surname names the whale in the novel about Captain Ahab is",
+   "answer": "Melville",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Moby"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The native language of the author of Don Quixote is",
+   "answer": "Spanish",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Cervantes"
+     ]
+    }
+   ],
+   "read_position": "last"
+  },
+  {
+   "prompt": "The continent on which the world's longest river is located is",
+   "answer": "Africa",
+   "intermediates": [
+    {
+     "name": "bridging entity",
+     "accept": [
+      "Nile"
+     ]
+    }
+   ],
+   "read_position": "last"
+  }
+ ]
+}
