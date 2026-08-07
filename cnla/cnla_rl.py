@@ -147,17 +147,30 @@ def compute_cnla_advantages(
         adv_tokens.append(at)
 
     n_bull = vmask.sum(1).float()
+    # per-rollout mean bullet advantage (for scalar logging)
+    adv_scalar = torch.stack([
+        bull_adv[i][vmask[i]].mean() if bool(vmask[i].any()) else torch.zeros((), device=dev)
+        for i in range(B)
+    ])
+    # within-rollout marginal spread = uniqueness proxy (high → bullets differ)
+    uniq = []
+    for i in range(B):
+        rv = r[i][vmask[i]]
+        uniq.append(rv.std().item() if rv.numel() > 1 else 0.0)
     metrics = {
         "cnla/fve_full_mean": fve_full.mean().item(),
         "cnla/marginal_mean": r[vmask].mean().item() if vmask.any() else 0.0,
         "cnla/n_bullets_mean": n_bull.mean().item(),
         "cnla/frac_4bullets": (n_bull == MAX_BULLETS).float().mean().item(),
-        # uniqueness proxy: spread of per-bullet marginals within a rollout (high =
-        # bullets contribute differently); low = redundant bullets.
-        "cnla/marginal_std_within": r.masked_fill(~vmask, float("nan")).nanstd(dim=1).nanmean().item()
-        if hasattr(r, "nanstd") else 0.0,
+        "cnla/uniqueness_mean": float(sum(uniq) / max(1, len(uniq))),
     }
-    return adv_tokens, metrics
+    info = {
+        "fve_per": fve_full,        # [B] composite reconstruction FVE per rollout
+        "adv_scalar": adv_scalar,   # [B] mean bullet advantage per rollout (logging)
+        "nbull": vmask.sum(1),      # [B] valid bullet count
+        "metrics": metrics,
+    }
+    return adv_tokens, info
 
 
 # --------------------------------------------------------------------------- #
@@ -196,13 +209,14 @@ if __name__ == "__main__":
         n = len(texts)
         return torch.randn(n, d), torch.ones(n, dtype=torch.bool)
     globals()["_ar_score"] = fake_ar
-    adv, met = compute_cnla_advantages(
+    adv, info = compute_cnla_advantages(
         full_ids=full_ids, prompt_lens=plens, activations=acts, groups=groups,
         response_texts=[resp] * B, critic=None, tokenizer=tok, whitener=wh,
         ar_template="{explanation}", mse_scale_f=1.0, device="cpu",
         d_model=d, batch_prompts=2,
     )
     print("adv[0] shape:", adv[0].shape, "n_resp:", full_ids[0].numel() - plens[0])
-    print("metrics:", {k: round(v, 4) for k, v in met.items()})
+    print("adv_scalar:", info["adv_scalar"].tolist(), "nbull:", info["nbull"].tolist())
+    print("metrics:", {k: round(v, 4) for k, v in info["metrics"].items()})
     assert adv[0].numel() == full_ids[0].numel() - plens[0]
     print("OK: spans + per-token advantage assembly wired correctly")
