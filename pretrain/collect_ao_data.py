@@ -207,7 +207,7 @@ def main():
             ents.append(pos_ent.get(p, float("nan")))
         if di % 100 == 0:
             print(f"doc {di}/{len(texts)} examples={len(rolls)}", flush=True)
-        if di % 1500 == 0 and di > 0 and rolls:
+        if di % 200 == 0 and di > 0 and rolls:
             print(f"[ckpt] wrote {write_out()} rows @ doc {di}", flush=True)
 
     n = write_out()
