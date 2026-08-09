@@ -2,11 +2,12 @@
 #SBATCH --job-name=skiplens_true_opd8
 #SBATCH --partition=general
 #SBATCH --qos=high
-#SBATCH --gres=gpu:2
-#SBATCH --cpus-per-task=16
-#SBATCH --mem=256G
+#SBATCH --array=0-1
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=128G
 #SBATCH --time=18:00:00
-#SBATCH --output=/workspace-vast/celeste/skip-lens-opd/logs/%x_%j.out
+#SBATCH --output=/workspace-vast/celeste/skip-lens-opd/logs/%x_%A_%a.out
 set -euo pipefail
 
 ROOT=${ROOT:-/workspace-vast/celeste/skip-lens-opd}
@@ -70,14 +71,6 @@ train_eval_lane() {
   done
 }
 
-export -f train_eval_lane
-export ROOT SRC VENV BASE HF_HOME HF_TOKEN_PATH PYTHONPATH
-srun --exclusive --nodes=1 --ntasks=1 --gres=gpu:1 --cpus-per-task=8 --mem=120G \
-  bash -lc "source /workspace-vast/celeste/.keys.env; source $VENV/bin/activate; cd $SRC; train_eval_lane normal" &
-normal_pid=$!
-srun --exclusive --nodes=1 --ntasks=1 --gres=gpu:1 --cpus-per-task=8 --mem=120G \
-  bash -lc "source /workspace-vast/celeste/.keys.env; source $VENV/bin/activate; cd $SRC; train_eval_lane repeat" &
-repeat_pid=$!
-wait "$normal_pid"
-wait "$repeat_pid"
-echo TRUE_OPD8_TRAIN_EVAL_DONE
+lanes=(normal repeat)
+train_eval_lane "${lanes[$SLURM_ARRAY_TASK_ID]}"
+echo "TRUE_OPD8_TRAIN_EVAL_DONE lane=${lanes[$SLURM_ARRAY_TASK_ID]}"
