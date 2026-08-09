@@ -6,26 +6,29 @@ track the model's workspace rather than merely predicting likely text.
 
 ## 1. On-policy distillation versus future-lens SFT
 
-All arms start from the same short L62 future-lens SFT checkpoint and the same
-1--16-token training set.
+All arms start from the same short L62 future-lens SFT checkpoint and use the
+same training rows. The reported comparison has an externally fixed horizon of
+at most eight continuation tokens.
 
 - **OPD:** the student samples a continuation from an injected activation. A
   frozen copy of the base model sees the real source prefix plus that sampled
   prefix and supplies its full next-token distribution. The loss is
   `KL(teacher || student)`.
-- **KL abstention:** the cutoff is preregistered as the 95th percentile of
-  first-token KL on the short-SFT validation set. At the first later position
-  exceeding that cutoff, the student is trained to emit EOS and the remaining
-  rollout is masked.
+- **No endogenous stopping:** KL is measured but is not fed back into an EOS
+  target. An earlier adaptive-EOS pilot collapsed because emitting EOS changed
+  the sampled state distribution, increased measured KL, and created still
+  more EOS supervision. That run is retained as a diagnosed negative control,
+  not interpreted as activation-information exhaustion.
 - **Token-matched SFT:** ordinary teacher-forced continuation CE, stopped after
   the same number of loss-bearing response tokens as OPD.
 - **Time-matched SFT:** the same CE arm, stopped after the same GPU wall time as
   OPD. Token and time matching are reported separately.
 
-Primary automatic measures are teacher/student KL by horizon, teacher top-1
-agreement, teacher log-probability of generated tokens, EOS rate/effective
-horizon, and reference-prefix accuracy. Sonnet 5 independently grades
-coherence, unsupported specificity (hallucination), and premature EOS.
+Primary automatic measures are paired ground-truth continuation NLL,
+teacher/student KL and teacher top-1 agreement on the exact same held-out token
+positions, plus free-running EOS/effective horizon and reference-prefix
+accuracy. Sonnet 5 independently grades coherence, unsupported specificity
+(hallucination), and premature EOS.
 
 ## 2. Official global-workspace evaluations
 
