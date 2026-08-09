@@ -10,7 +10,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-
 METRICS = (
     ("workspace_recall", "Expected workspace concept recall", "fraction"),
     ("joint_recovery", "All concepts in one readout", "fraction"),
