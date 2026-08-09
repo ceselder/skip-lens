@@ -38,7 +38,7 @@ run_lane() {
   python -m nla.train_opd --objective opd --base-ckpt "$BASE" \
     --av-ckpt "$warm" --parquet "$train" --sidecar "$train" \
     --save-dir "$ROOT/checkpoints/${name}_opd" \
-    --num-steps 20000 --batch-size 2 --max-new-tokens 16 \
+    --num-steps 20000 --lr-decay-steps 20000 --batch-size 2 --max-new-tokens 16 \
     --kl-threshold "$threshold" --max-optimized-tokens "$TOKEN_BUDGET" \
     --lr 3e-5 --save-every 500 \
     --wandb-project skip-lens-opd --wandb-group "${name}-opd-vs-sft" \
@@ -51,7 +51,7 @@ run_lane() {
   python -m nla.train_opd --objective sft --base-ckpt "$BASE" \
     --av-ckpt "$warm" --parquet "$train" --sidecar "$train" \
     --save-dir "$ROOT/checkpoints/${name}_sft_tokens" \
-    --num-steps 100000 --batch-size 4 --max-new-tokens 16 \
+    --num-steps 20000 --lr-decay-steps 20000 --batch-size 2 --max-new-tokens 16 \
     --max-optimized-tokens "$opd_tokens" --lr 3e-5 --save-every 1000 \
     --wandb-project skip-lens-opd --wandb-group "${name}-opd-vs-sft" \
     --wandb-name "${name}_sft_token_matched"
@@ -59,7 +59,7 @@ run_lane() {
   python -m nla.train_opd --objective sft --base-ckpt "$BASE" \
     --av-ckpt "$warm" --parquet "$train" --sidecar "$train" \
     --save-dir "$ROOT/checkpoints/${name}_sft_time" \
-    --num-steps 100000 --batch-size 4 --max-new-tokens 16 \
+    --num-steps 100000 --lr-decay-steps 20000 --batch-size 4 --max-new-tokens 16 \
     --max-wall-seconds "$opd_seconds" --lr 3e-5 --save-every 1000 \
     --wandb-project skip-lens-opd --wandb-group "${name}-opd-vs-sft" \
     --wandb-name "${name}_sft_time_matched"

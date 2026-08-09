@@ -134,6 +134,8 @@ def main() -> None:
     ap.add_argument("--lr", type=float, default=3e-5)
     ap.add_argument("--min-lr", type=float, default=3e-6)
     ap.add_argument("--warmup-steps", type=int, default=20)
+    ap.add_argument("--lr-decay-steps", type=int, default=None,
+                    help="cosine schedule horizon; defaults to --num-steps")
     ap.add_argument("--max-grad-norm", type=float, default=1.0)
     ap.add_argument("--max-optimized-tokens", type=int, default=0,
                     help="0 disables; otherwise stop after this many loss-bearing tokens")
@@ -149,6 +151,7 @@ def main() -> None:
     ap.add_argument("--no-wandb", action="store_true")
     args = ap.parse_args()
     args.sidecar = args.sidecar or args.parquet
+    args.lr_decay_steps = args.lr_decay_steps or args.num_steps
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -175,7 +178,7 @@ def main() -> None:
     optimizer = torch.optim.AdamW(trainable, lr=args.lr, betas=(0.9, 0.95), weight_decay=0.0)
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer,
-        build_lr_lambda(args.warmup_steps, args.num_steps, args.min_lr / args.lr),
+        build_lr_lambda(args.warmup_steps, args.lr_decay_steps, args.min_lr / args.lr),
     )
 
     rows = load_dataset(args.parquet, args.max_rows)
