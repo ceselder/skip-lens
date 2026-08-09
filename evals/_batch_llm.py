@@ -38,9 +38,15 @@ def batch_call(
         )
     client = anthropic.Anthropic(api_key=key)
     state = Path(state_path)
-    prompt_hash = hashlib.sha256(
-        json.dumps(prompts, ensure_ascii=False, separators=(",", ":")).encode()
-    ).hexdigest()
+    # The state identity includes generation settings as well as prompts.  A
+    # previous version omitted these, so raising max_tokens could silently
+    # resume the old truncated batch and reproduce the same parse failures.
+    request_identity = {
+        "prompts": prompts, "model": model, "max_tokens": max_tokens,
+    }
+    prompt_hash = hashlib.sha256(json.dumps(
+        request_identity, ensure_ascii=False, separators=(",", ":"),
+    ).encode()).hexdigest()
     if state.exists():
         saved = json.loads(state.read_text())
         if saved.get("prompt_sha256") != prompt_hash:

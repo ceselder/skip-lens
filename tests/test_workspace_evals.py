@@ -37,6 +37,12 @@ def test_judge_parse_requires_one_score_per_readout():
     assert "judge_error" in parse(record, text, None)
 
 
+def test_judge_parse_quarantines_truncated_json():
+    record = {"readouts": ["a"], "intermediates": ["x"]}
+    truncated = '{"readouts": [{"covered": ["x"], "coherence": 4'
+    assert "judge_error" in parse(record, truncated, None)
+
+
 def test_summary_distinguishes_union_from_joint_recovery():
     record = {
         "distribution": "multilingual", "mode": "raw", "layer": 42,

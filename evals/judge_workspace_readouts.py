@@ -170,6 +170,8 @@ def main():
     ap.add_argument("--input", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--workers", type=int, default=24)
+    ap.add_argument("--max-tokens", type=int, default=4096,
+                    help="judge output budget; must include Sonnet 5 reasoning tokens")
     ap.add_argument("--sync", action="store_true",
                     help="use synchronous low-priority calls (small smoke tests only)")
     args = ap.parse_args()
@@ -178,14 +180,25 @@ def main():
     if args.sync:
         def one(record):
             return parse(record, *llm_call(
-                make_prompt(record), MODEL, max_tokens=1024, temperature=0.0))
+                make_prompt(record), MODEL, max_tokens=args.max_tokens, temperature=0.0))
         with ThreadPoolExecutor(max_workers=args.workers) as pool:
             records = list(pool.map(one, source_records))
     else:
-        results = batch_call([make_prompt(record) for record in source_records],
-                             MODEL, 1024, args.out + ".batch.json")
+        prompts = [make_prompt(record) for record in source_records]
+        results = batch_call(
+            prompts, MODEL, args.max_tokens, args.out + ".batch.json")
         records = [parse(record, text, err)
                    for record, (text, err) in zip(source_records, results)]
+        retry_indices = [i for i, record in enumerate(records)
+                         if "judge_error" in record]
+        if retry_indices:
+            print(f"[judge] retrying {len(retry_indices)} malformed/failed responses", flush=True)
+            retry_results = batch_call(
+                [prompts[i] for i in retry_indices], MODEL, args.max_tokens * 2,
+                args.out + ".retry.batch.json",
+            )
+            for i, (text, err) in zip(retry_indices, retry_results):
+                records[i] = parse(source_records[i], text, err)
     result = {
         "meta": {**data["meta"], "judge_model": MODEL},
         "summary": summarise(records),
