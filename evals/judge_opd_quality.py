@@ -43,8 +43,9 @@ def make_prompt(row):
 
 
 def parse(row, text, err):
+    clean_row = {k: v for k, v in row.items() if k not in {"quality", "judge_error"}}
     if text is None:
-        return {**row, "judge_error": err}
+        return {**clean_row, "judge_error": err}
     try:
         start = text.index("{")
         obj, _ = json.JSONDecoder().raw_decode(text[start:])
@@ -52,9 +53,9 @@ def parse(row, text, err):
         missing = required - set(obj)
         if missing:
             raise ValueError(f"missing judge fields: {sorted(missing)}")
-        return {**row, "quality": obj}
+        return {**clean_row, "quality": obj}
     except (ValueError, KeyError, TypeError) as exc:
-        return {**row, "judge_error": f"parse: {exc}: {text[:200]}"}
+        return {**clean_row, "judge_error": f"parse: {exc}: {text[:200]}"}
 
 
 def mean(values):
@@ -76,6 +77,8 @@ def main():
     ap.add_argument("--input", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--workers", type=int, default=24)
+    ap.add_argument("--max-tokens", type=int, default=2048,
+                    help="judge output budget including Sonnet 5 reasoning tokens")
     ap.add_argument("--sync", action="store_true",
                     help="use synchronous low-priority calls (small smoke tests only)")
     args = ap.parse_args()
@@ -83,13 +86,24 @@ def main():
     rows = source["detail"]
     if args.sync:
         def one(row):
-            return parse(row, *llm_call(make_prompt(row), MODEL, max_tokens=512, temperature=0.0))
+            return parse(row, *llm_call(
+                make_prompt(row), MODEL, max_tokens=args.max_tokens, temperature=0.0))
         with ThreadPoolExecutor(max_workers=args.workers) as pool:
             detail = list(pool.map(one, rows))
     else:
-        results = batch_call([make_prompt(row) for row in rows], MODEL, 512,
+        prompts = [make_prompt(row) for row in rows]
+        results = batch_call(prompts, MODEL, args.max_tokens,
                              args.out + ".batch.json")
         detail = [parse(row, text, err) for row, (text, err) in zip(rows, results)]
+        retry_indices = [i for i, row in enumerate(detail) if "judge_error" in row]
+        if retry_indices:
+            print(f"[judge] retrying {len(retry_indices)} malformed/failed responses", flush=True)
+            retry_results = batch_call(
+                [prompts[i] for i in retry_indices], MODEL, args.max_tokens * 2,
+                args.out + ".retry.batch.json",
+            )
+            for i, (text, err) in zip(retry_indices, retry_results):
+                detail[i] = parse(rows[i], text, err)
     valid = [x["quality"] for x in detail if "quality" in x]
     summary = {**summarise_quality(valid), "errors": len(detail) - len(valid)}
     grouped = {}
