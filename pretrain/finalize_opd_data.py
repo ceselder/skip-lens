@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import hashlib
 import json
 from pathlib import Path
 
@@ -37,6 +38,7 @@ def main() -> None:
     ap.add_argument("--rollout-idx", type=int, default=0)
     ap.add_argument("--max-target-tokens", type=int, default=16)
     ap.add_argument("--val-frac", type=float, default=0.05)
+    ap.add_argument("--split-seed", type=int, default=0)
     args = ap.parse_args()
 
     table = pq.read_table(args.collected)
@@ -65,7 +67,12 @@ def main() -> None:
         row["continuation_ids"] = (row["continuation_ids"] or [])[:args.max_target_tokens]
         rows.append(row)
 
-    docs = sorted({r["doc_id"] for r in rows})
+    docs = sorted(
+        {r["doc_id"] for r in rows},
+        key=lambda doc: hashlib.sha256(
+            f"{args.split_seed}:{doc}".encode()
+        ).digest(),
+    )
     n_val = max(1, round(len(docs) * args.val_frac))
     val_docs = set(docs[:n_val])
     prompt_type = pa.list_(pa.struct([("role", pa.string()), ("content", pa.string())]))
