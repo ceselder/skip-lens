@@ -15,6 +15,7 @@ same loader, actor, optimizer, token counter and wall-clock stopping machinery.
 from __future__ import annotations
 
 import argparse
+import collections
 import json
 import math
 import shutil
@@ -141,6 +142,10 @@ def main() -> None:
                     help="0 disables; otherwise stop after this many loss-bearing tokens")
     ap.add_argument("--max-wall-seconds", type=float, default=0.0,
                     help="0 disables; used for the GPU-hour-matched SFT arm")
+    ap.add_argument("--early-stop-first-cutoff-rate", type=float, default=0.9,
+                    help="stop OPD when this fraction of the rolling window fails at token 1")
+    ap.add_argument("--early-stop-window-examples", type=int, default=100)
+    ap.add_argument("--early-stop-min-steps", type=int, default=50)
     ap.add_argument("--max-rows", type=int, default=None)
     ap.add_argument("--save-every", type=int, default=50)
     ap.add_argument("--seed", type=int, default=0)
@@ -204,6 +209,7 @@ def main() -> None:
                         group=args.wandb_group, config=vars(args))
 
     optimized_total = 0
+    first_cutoff_window = collections.deque(maxlen=args.early_stop_window_examples)
     wall_start = time.monotonic()
     last_step = 0
     last_meta: dict = {}
@@ -283,6 +289,8 @@ def main() -> None:
                     mean_kl = float(loss_out.kl[valid].mean())
                     cutoff_rate = float(loss_out.eos_mask.any(-1).float().mean())
                     horizon = float((loss_out.distill_mask | loss_out.eos_mask).sum(-1).float().mean())
+                    first_cutoffs = loss_out.eos_mask[:, 0].tolist()
+                    first_cutoff_window.extend(bool(x) for x in first_cutoffs)
                 metrics = {
                     "distill_loss": float(loss_out.distill_loss.detach()),
                     "eos_loss": float(loss_out.eos_loss.detach()),
@@ -290,6 +298,9 @@ def main() -> None:
                     "top1_agreement": float(agree.sum() / valid.sum().clamp_min(1)),
                     "cutoff_rate": cutoff_rate,
                     "effective_horizon": horizon,
+                    "rolling_first_cutoff_rate": (
+                        sum(first_cutoff_window) / len(first_cutoff_window)
+                    ),
                 }
             else:
                 targets = torch.full((len(batch), width), -100, dtype=torch.long, device=device)
@@ -331,15 +342,27 @@ def main() -> None:
             "optimized_tokens": optimized_total, "wall_seconds": elapsed,
             "kl_threshold": args.kl_threshold, "eos_weight": args.eos_weight,
         }
+        collapsed = (
+            args.objective == "opd"
+            and step >= args.early_stop_min_steps
+            and len(first_cutoff_window) == args.early_stop_window_examples
+            and sum(first_cutoff_window) / len(first_cutoff_window)
+            >= args.early_stop_first_cutoff_rate
+        )
         should_stop = (
             (args.max_optimized_tokens > 0 and optimized_total >= args.max_optimized_tokens)
             or (args.max_wall_seconds > 0 and elapsed >= args.max_wall_seconds)
+            or collapsed
+        )
+        last_meta["stop_reason"] = (
+            "first_token_kl_collapse" if collapsed else
+            "token_or_wall_budget" if should_stop else None
         )
         if step % args.save_every == 0 or should_stop or step == args.num_steps:
             out = _save(model, tokenizer, args.sidecar, save_dir, step, last_meta)
             print(f"[save] {out}", flush=True)
         if should_stop:
-            print(f"[stop] token/wall budget reached at step {step}", flush=True)
+            print(f"[stop] {last_meta['stop_reason']} at step {step}", flush=True)
             break
 
     (save_dir / "run_summary.json").write_text(json.dumps(last_meta, indent=2))
