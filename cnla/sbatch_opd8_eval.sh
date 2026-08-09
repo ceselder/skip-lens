@@ -56,6 +56,7 @@ repeat_pid=$!
 wait "$normal_pid"
 wait "$repeat_pid"
 
+source "$VENV/bin/activate"
 python scripts/merge_eval_json.py \
   --inputs "$ROOT"/results/opd8/normal_*_eval.json \
   --out "$ROOT/results/opd8/normal_quality_inputs.json"
