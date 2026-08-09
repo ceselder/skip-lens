@@ -13,7 +13,7 @@ ROOT=${ROOT:-/workspace-vast/celeste/skip-lens-opd}
 SRC=$ROOT/src
 VENV=$ROOT/venv
 BASE=${BASE:-Qwen/Qwen3.6-27B}
-TOKEN_BUDGET=${TOKEN_BUDGET:-50000}
+TOKEN_BUDGET=${TOKEN_BUDGET:-10000}
 source /workspace-vast/celeste/.keys.env
 export HF_HOME=/workspace-vast/pretrained_ckpts
 export HF_TOKEN_PATH=/workspace-vast/celeste/.cache/huggingface/token
