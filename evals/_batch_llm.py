@@ -30,9 +30,12 @@ def batch_call(
     ``state_path`` stores the batch ID immediately after submission. A requeued
     Slurm job resumes polling that batch instead of paying for duplicate calls.
     """
-    key = os.environ.get("ANTHROPIC_API_KEY_BATCH")
+    key = (os.environ.get("ANTHROPIC_API_KEY_BATCH")
+           or os.environ.get("ANTHROPIC_API_KEY"))
     if not key:
-        raise RuntimeError("ANTHROPIC_API_KEY_BATCH is required for offline judge batches")
+        raise RuntimeError(
+            "ANTHROPIC_API_KEY_BATCH or ANTHROPIC_API_KEY is required for judge batches"
+        )
     client = anthropic.Anthropic(api_key=key)
     state = Path(state_path)
     prompt_hash = hashlib.sha256(
