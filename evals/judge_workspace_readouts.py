@@ -123,6 +123,48 @@ def summarise(records):
     return out
 
 
+def summarise_band(records):
+    """Collapse layers using the paper's any-hit-in-workspace-band rule."""
+    items = {}
+    for record in records:
+        if "scores" not in record:
+            continue
+        key = (record["distribution"], record["mode"], record["name"])
+        item = items.setdefault(key, {
+            "expected": {x.lower() for x in record["intermediates"]},
+            "covered": set(), "jlens_covered": set(), "joint": False,
+        })
+        for score in record["scores"]:
+            covered = ({str(x).lower() for x in score.get("covered", [])}
+                       & item["expected"])
+            item["covered"].update(covered)
+            item["joint"] |= covered == item["expected"]
+        item["jlens_covered"].update(
+            x.lower() for x in lexical_jlens_coverage(record)
+        )
+
+    buckets = {}
+    for (distribution, mode, _name), item in items.items():
+        key = (distribution, mode)
+        bucket = buckets.setdefault(key, {
+            "concept_recall": [], "joint": [], "jlens_recall": [],
+        })
+        denom = max(1, len(item["expected"]))
+        bucket["concept_recall"].append(len(item["covered"]) / denom)
+        bucket["joint"].append(item["joint"])
+        bucket["jlens_recall"].append(len(item["jlens_covered"] & item["expected"]) / denom)
+
+    out = {}
+    for (distribution, mode), values in buckets.items():
+        out.setdefault(distribution, {})[mode] = {
+            "n_items": len(values["concept_recall"]),
+            "concept_recall_across_band": mean(values["concept_recall"]),
+            "joint_single_readout_any_layer": mean(values["joint"]),
+            "jlens_concept_recall_across_band": mean(values["jlens_recall"]),
+        }
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True)
@@ -147,6 +189,7 @@ def main():
     result = {
         "meta": {**data["meta"], "judge_model": MODEL},
         "summary": summarise(records),
+        "summary_band": summarise_band(records),
         "judge_errors": sum("judge_error" in x for x in records),
         "records": records,
     }

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from evals.judge_workspace_readouts import parse, summarise
+from evals.judge_workspace_readouts import parse, summarise, summarise_band
 
 OFFICIAL_COUNTS = {
     "association": 102,
@@ -53,3 +53,22 @@ def test_summary_distinguishes_union_from_joint_recovery():
     assert summary["concept_recall_at_k"] == 1.0
     assert summary["joint_single_readout_recovery"] == 0.0
     assert summary["jlens_lexical_concept_recall"] == 0.5
+
+
+def test_workspace_band_unions_hits_across_layers_but_not_joint_readouts():
+    records = []
+    for layer, concept in ((32, "big"), (42, "small")):
+        records.append({
+            "distribution": "multilingual", "mode": "raw",
+            "name": "item", "layer": layer,
+            "intermediates": ["big", "small"],
+            "jlens_covered": [concept],
+            "scores": [{
+                "covered": [concept], "coherence": 5,
+                "unrelated_hallucination": False, "answer_skip": False,
+            }],
+        })
+    summary = summarise_band(records)["multilingual"]["raw"]
+    assert summary["concept_recall_across_band"] == 1.0
+    assert summary["jlens_concept_recall_across_band"] == 1.0
+    assert summary["joint_single_readout_any_layer"] == 0.0
