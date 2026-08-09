@@ -57,6 +57,16 @@ def mean(values):
     return sum(values) / len(values) if values else None
 
 
+def summarise_quality(rows):
+    return {
+        "n": len(rows),
+        "coherence": mean([float(x["coherence"]) for x in rows]),
+        "support": mean([float(x["support"]) for x in rows]),
+        "hallucination_rate": mean([bool(x["hallucination"]) for x in rows]),
+        "premature_eos_rate": mean([bool(x["premature_eos"]) for x in rows]),
+    }
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True)
@@ -77,16 +87,26 @@ def main():
                              args.out + ".batch.json")
         detail = [parse(row, text, err) for row, (text, err) in zip(rows, results)]
     valid = [x["quality"] for x in detail if "quality" in x]
-    summary = {
-        "n": len(valid), "errors": len(detail) - len(valid),
-        "coherence": mean([float(x["coherence"]) for x in valid]),
-        "support": mean([float(x["support"]) for x in valid]),
-        "hallucination_rate": mean([bool(x["hallucination"]) for x in valid]),
-        "premature_eos_rate": mean([bool(x["premature_eos"]) for x in valid]),
-    }
+    summary = {**summarise_quality(valid), "errors": len(detail) - len(valid)}
+    grouped = {}
+    for row in detail:
+        if "quality" not in row:
+            continue
+        key = (row.get("dataset", "unknown"), row.get("arm", "unknown"),
+               row.get("feed", row.get("feed_col", "unknown")))
+        grouped.setdefault(key, []).append(row["quality"])
+    by_condition = {}
+    for (dataset, arm, feed), values in grouped.items():
+        by_condition.setdefault(dataset, {}).setdefault(arm, {})[feed] = (
+            summarise_quality(values)
+        )
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-    Path(args.out).write_text(json.dumps({"model": MODEL, "summary": summary,
-                                         "detail": detail}, indent=2, ensure_ascii=False))
+    Path(args.out).write_text(json.dumps({
+        "model": MODEL,
+        "summary": summary,
+        "by_condition": by_condition,
+        "detail": detail,
+    }, indent=2, ensure_ascii=False))
     print(json.dumps(summary, indent=2))
 
 
