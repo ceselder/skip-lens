@@ -178,6 +178,54 @@ def summarise_band(records):
     return out
 
 
+def summarise_overall(summary, summary_band):
+    """Micro-average the per-distribution summaries over released prompts."""
+    layer_buckets = {}
+    for distribution in summary.values():
+        for mode, layers in distribution.items():
+            for layer, values in layers.items():
+                bucket = layer_buckets.setdefault((mode, layer), [])
+                bucket.append(values)
+
+    by_layer = {}
+    layer_metrics = (
+        "concept_recall_at_k", "joint_single_readout_recovery",
+        "mean_coherence_1_5", "unrelated_hallucination_rate",
+        "answer_skip_rate", "jlens_lexical_concept_recall",
+    )
+    for (mode, layer), rows in layer_buckets.items():
+        n_items = sum(row["n_items"] for row in rows)
+        by_layer.setdefault(mode, {})[layer] = {
+            "n_items": n_items,
+            **{
+                metric: sum(row[metric] * row["n_items"] for row in rows)
+                / n_items
+                for metric in layer_metrics
+            },
+        }
+
+    band_buckets = {}
+    for distribution in summary_band.values():
+        for mode, values in distribution.items():
+            band_buckets.setdefault(mode, []).append(values)
+    band_metrics = (
+        "concept_recall_across_band", "joint_single_readout_any_layer",
+        "jlens_concept_recall_across_band",
+    )
+    band = {}
+    for mode, rows in band_buckets.items():
+        n_items = sum(row["n_items"] for row in rows)
+        band[mode] = {
+            "n_items": n_items,
+            **{
+                metric: sum(row[metric] * row["n_items"] for row in rows)
+                / n_items
+                for metric in band_metrics
+            },
+        }
+    return {"by_layer": by_layer, "band": band}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True)
@@ -231,14 +279,17 @@ def main():
         repaired = {record_key(record): record for record in records}
         records = [repaired.get(record_key(record), record) for record in all_records]
 
+    summary = summarise(records)
+    summary_band = summarise_band(records)
     result = {
         "meta": {
             **data["meta"], "judge_model": MODEL,
             "judge_layers": sorted({x["layer"] for x in source_records}),
             "judge_modes": sorted({x["mode"] for x in source_records}),
         },
-        "summary": summarise(records),
-        "summary_band": summarise_band(records),
+        "summary": summary,
+        "summary_band": summary_band,
+        "summary_overall": summarise_overall(summary, summary_band),
         "judge_errors": sum("judge_error" in x for x in records),
         "records": records,
     }
