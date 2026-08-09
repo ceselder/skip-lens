@@ -77,7 +77,11 @@ def main():
     geos = getattr(model.generation_config, "eos_token_id", None)
     eos_ids.update([geos] if isinstance(geos, int) else (geos or []))
     detail = []
-    per_horizon = {i: {"kl": [], "top1": [], "teacher_lp": []}
+    per_horizon = {i: {
+        "kl": [], "top1": [], "teacher_lp": [],
+        "reference_kl": [], "reference_top1": [],
+        "reference_teacher_nll": [], "reference_student_nll": [],
+    }
                    for i in range(args.max_new_tokens)}
 
     for b0 in range(0, len(rows), args.batch_size):
@@ -183,6 +187,11 @@ def main():
                 per_horizon[j]["kl"].append(float(kl[i, j]))
                 per_horizon[j]["top1"].append(float(top1[i, j]))
                 per_horizon[j]["teacher_lp"].append(teacher_lp[j])
+            for j in range(len(ref)):
+                per_horizon[j]["reference_kl"].append(float(rkl[i, j]))
+                per_horizon[j]["reference_top1"].append(float(rtop1[i, j]))
+                per_horizon[j]["reference_teacher_nll"].append(-ref_teacher_lp[j])
+                per_horizon[j]["reference_student_nll"].append(-ref_student_lp[j])
         print(f"[eval] {min(b0 + len(batch), len(rows))}/{len(rows)}", flush=True)
 
     aggregate = {
@@ -208,10 +217,18 @@ def main():
         for q in (0.5, 0.9, 0.95, 0.99)
     }
     horizon = {
-        str(i + 1): {"n": len(v["kl"]), "mean_kl": mean(v["kl"]),
-                     "top1_agreement": mean(v["top1"]),
-                     "mean_teacher_logprob": mean(v["teacher_lp"])}
-        for i, v in per_horizon.items() if v["kl"]
+        str(i + 1): {
+            "n": len(v["kl"]),
+            "mean_kl": mean(v["kl"]),
+            "top1_agreement": mean(v["top1"]),
+            "mean_teacher_logprob": mean(v["teacher_lp"]),
+            "reference_n": len(v["reference_kl"]),
+            "reference_mean_kl": mean(v["reference_kl"]),
+            "reference_top1_agreement": mean(v["reference_top1"]),
+            "reference_teacher_nll": mean(v["reference_teacher_nll"]),
+            "reference_student_nll": mean(v["reference_student_nll"]),
+        }
+        for i, v in per_horizon.items() if v["kl"] or v["reference_kl"]
     }
     out = {"checkpoint": args.av_ckpt, "aggregate": aggregate,
            "by_horizon": horizon, "detail": detail}
