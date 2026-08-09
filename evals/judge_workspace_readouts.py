@@ -36,6 +36,10 @@ The surface answer/target, when defined, is: {target}
 Independent sampled readouts of the SAME activation:
 {readouts}
 
+There are exactly {readout_count} readouts in the JSON array above. Return
+exactly {readout_count} score objects in the same order; embedded newlines are
+part of one string, not additional readouts.
+
 For each readout separately:
 1. Mark which expected intermediate concepts it states or clearly implies. Do not infer a concept from the original prompt; it must be present in the readout.
 2. Score coherence from 1 (broken word salad) to 5 (clear, internally coherent phrase or continuation).
@@ -46,6 +50,12 @@ Return JSON only, preserving readout order:
 {{"readouts": [{{"covered": ["exact expected strings only"], "coherence": 1, "unrelated_hallucination": false, "answer_skip": false}}]}}"""
 
 
+def record_key(record):
+    return (
+        record["distribution"], record["name"], int(record["layer"]), record["mode"]
+    )
+
+
 def make_prompt(record):
     concepts = record["intermediates"]
     readouts = record["readouts"]
@@ -53,13 +63,16 @@ def make_prompt(record):
         prompt=record["prompt"][:1800],
         concepts="\n".join(f"- {x}" for x in concepts),
         target=record.get("target") or "(none)",
-        readouts="\n".join(f"[{i}] {x}" for i, x in enumerate(readouts)),
+        readouts=json.dumps(readouts, ensure_ascii=False),
+        readout_count=len(readouts),
     )
 
 
 def parse(record, text, err):
+    clean_record = {k: v for k, v in record.items()
+                    if k not in {"scores", "judge_error"}}
     if text is None:
-        return {**record, "judge_error": err}
+        return {**clean_record, "judge_error": err}
     try:
         obj, _ = json.JSONDecoder().raw_decode(text[text.index("{"):])
         scores = obj["readouts"]
@@ -68,9 +81,9 @@ def parse(record, text, err):
             raise ValueError(
                 f"returned {len(scores)} scores for {expected_count} readouts"
             )
-        return {**record, "scores": scores}
+        return {**clean_record, "scores": scores}
     except (ValueError, KeyError, TypeError) as exc:
-        return {**record, "judge_error": f"{exc}: {text[:240]}"}
+        return {**clean_record, "judge_error": f"{exc}: {text[:240]}"}
 
 
 def lexical_jlens_coverage(record):
@@ -176,11 +189,16 @@ def main():
                     help="optional comma-separated layer subset")
     ap.add_argument("--modes", default=None,
                     help="optional comma-separated readout-mode subset")
+    ap.add_argument("--retry-errors-only", action="store_true",
+                    help="input is a judged file; repair only its errored records")
     ap.add_argument("--sync", action="store_true",
                     help="use synchronous low-priority calls (small smoke tests only)")
     args = ap.parse_args()
     data = json.loads(Path(args.input).read_text())
-    source_records = data["records"]
+    all_records = data["records"]
+    source_records = all_records
+    if args.retry_errors_only:
+        source_records = [x for x in source_records if "judge_error" in x]
     if args.layers:
         selected_layers = {int(x) for x in args.layers.split(",")}
         source_records = [x for x in source_records if x["layer"] in selected_layers]
@@ -209,6 +227,10 @@ def main():
             )
             for i, (text, err) in zip(retry_indices, retry_results):
                 records[i] = parse(source_records[i], text, err)
+    if args.retry_errors_only:
+        repaired = {record_key(record): record for record in records}
+        records = [repaired.get(record_key(record), record) for record in all_records]
+
     result = {
         "meta": {
             **data["meta"], "judge_model": MODEL,

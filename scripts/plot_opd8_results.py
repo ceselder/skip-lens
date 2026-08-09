@@ -9,7 +9,9 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 ARMS = ("warm", "opd8", "sft8_tokens", "sft8_time")
-LABELS = ("SFT warm start", "On-policy KL", "SFT, equal tokens", "SFT, equal time")
+LABELS = (
+    "SFT warm start", "Forward KL (retired)", "SFT, equal tokens", "SFT, equal time"
+)
 COLORS = ("#9c948b", "#d97757", "#4c78a8", "#72a276")
 
 
@@ -41,7 +43,7 @@ def main() -> None:
         ax.bar_label(bars, fmt="%.3f", padding=3, fontsize=9)
         ax.set_ylim(0, max(values) * 1.2)
     fig.suptitle(
-        "Eight-token on-policy distillation improves distribution fidelity, not validation loss",
+        "The retired forward-KL ablation improves distribution fidelity, not validation loss",
         fontsize=13,
     )
     fig.tight_layout()
@@ -63,7 +65,8 @@ def main() -> None:
 
     fig, axes = plt.subplots(1, 2, figsize=(10.5, 4.1))
     for arm, label, color in zip(
-        ("opd8", "sft8_tokens"), ("On-policy KL", "SFT, equal tokens"), COLORS[1:3]
+        ("opd8", "sft8_tokens"), ("Forward KL (retired)", "SFT, equal tokens"),
+        COLORS[1:3]
     ):
         positions = [int(x) for x in horizon[arm]]
         axes[0].plot(

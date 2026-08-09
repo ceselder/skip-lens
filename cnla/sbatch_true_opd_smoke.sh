@@ -24,7 +24,7 @@ python -m nla.train_opd \
   --objective opd --base-ckpt Qwen/Qwen3.6-27B \
   --av-ckpt "$ROOT/checkpoints/normal_warm/iter_0000200" \
   --parquet "$ROOT/data/normal_train.parquet" \
-  --sidecar "$ROOT/data/normal_train.parquet.nla_meta.yaml" \
+  --sidecar "$ROOT/data/normal_train.parquet" \
   --save-dir "$OUT" --num-steps 2 --batch-size 2 \
   --max-new-tokens 8 --max-rows 8 --save-every 1 \
   --temperature 1.0 --no-wandb
