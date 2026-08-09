@@ -12,8 +12,12 @@ at most eight continuation tokens.
 
 - **OPD:** the student samples a continuation from an injected activation. A
   frozen copy of the base model sees the real source prefix plus that sampled
-  prefix and supplies its full next-token distribution. The loss is
-  `KL(teacher || student)`.
+  prefix and scores the sampled tokens. Each token receives reverse-KL
+  advantage `-(log p_student - log p_teacher)`, and the adapter is updated
+  through the on-policy importance ratio.
+- **Forward-KL ablation:** the retired pilot minimizes the full-vocabulary
+  `KL(teacher || student)` on student-sampled states. It remains reproducible
+  as `--objective forward_kl`, but is not reported as OPD.
 - **No endogenous stopping:** KL is measured but is not fed back into an EOS
   target. An earlier adaptive-EOS pilot collapsed because emitting EOS changed
   the sampled state distribution, increased measured KL, and created still

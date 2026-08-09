@@ -35,7 +35,7 @@ run_lane() {
   local threshold
   threshold=$(python -c "import json; print(json.load(open('$result/kl_threshold.json'))['threshold_nats'])")
 
-  python -m nla.train_opd --objective opd --base-ckpt "$BASE" \
+  python -m nla.train_opd --objective forward_kl --base-ckpt "$BASE" \
     --av-ckpt "$warm" --parquet "$train" --sidecar "$train" \
     --save-dir "$ROOT/checkpoints/${name}_opd" \
     --num-steps 20000 --lr-decay-steps 20000 --batch-size 2 --max-new-tokens 16 \

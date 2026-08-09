@@ -19,7 +19,7 @@ from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from nla.config import load_nla_config
-from nla.opd import teacher_student_kl
+from nla.opd import student_teacher_kl, teacher_student_kl
 from nla.train_opd import _predictive_logits, _right_pad, _student_prompt_ids, _trim_generated
 from nla.utils import register_karvonen_hook
 
@@ -78,8 +78,8 @@ def main():
     eos_ids.update([geos] if isinstance(geos, int) else (geos or []))
     detail = []
     per_horizon = {i: {
-        "kl": [], "top1": [], "teacher_lp": [],
-        "reference_kl": [], "reference_top1": [],
+        "kl": [], "reverse_kl": [], "top1": [], "teacher_lp": [],
+        "reference_kl": [], "reference_reverse_kl": [], "reference_top1": [],
         "reference_teacher_nll": [], "reference_student_nll": [],
     }
                    for i in range(args.max_new_tokens)}
@@ -127,6 +127,7 @@ def main():
         finally:
             vref[0] = None
         kl = teacher_student_kl(tp, sp)
+        reverse_kl = student_teacher_kl(tp, sp)
         top1 = tp.argmax(-1) == sp.argmax(-1)
         tlogp = F.log_softmax(tp, -1)
 
@@ -150,6 +151,7 @@ def main():
         finally:
             vref[0] = None
         rkl = teacher_student_kl(rtp, rsp)
+        r_reverse_kl = student_teacher_kl(rtp, rsp)
         rtop1 = rtp.argmax(-1) == rsp.argmax(-1)
         rtlogp = F.log_softmax(rtp, -1)
         rslogp = F.log_softmax(rsp, -1)
@@ -173,10 +175,13 @@ def main():
                 "length": len(response), "ended_eos": bool(response and response[-1] in eos_ids),
                 "exact_prefix_tokens": prefix,
                 "mean_kl": float(kl[i, :len(response)].mean()),
+                "mean_reverse_kl": float(reverse_kl[i, :len(response)].mean()),
                 "kl_by_token": [float(x) for x in kl[i, :len(response)]],
                 "top1_agreement": float(top1[i, :len(response)].float().mean()),
                 "mean_teacher_logprob": mean(teacher_lp),
                 "reference_mean_kl": float(rkl[i, :len(ref)].mean()),
+                "reference_mean_reverse_kl": float(
+                    r_reverse_kl[i, :len(ref)].mean()),
                 "reference_top1_agreement": float(
                     rtop1[i, :len(ref)].float().mean()),
                 "reference_teacher_nll": -mean(ref_teacher_lp),
@@ -185,10 +190,13 @@ def main():
             detail.append(rec)
             for j in range(len(response)):
                 per_horizon[j]["kl"].append(float(kl[i, j]))
+                per_horizon[j]["reverse_kl"].append(float(reverse_kl[i, j]))
                 per_horizon[j]["top1"].append(float(top1[i, j]))
                 per_horizon[j]["teacher_lp"].append(teacher_lp[j])
             for j in range(len(ref)):
                 per_horizon[j]["reference_kl"].append(float(rkl[i, j]))
+                per_horizon[j]["reference_reverse_kl"].append(
+                    float(r_reverse_kl[i, j]))
                 per_horizon[j]["reference_top1"].append(float(rtop1[i, j]))
                 per_horizon[j]["reference_teacher_nll"].append(-ref_teacher_lp[j])
                 per_horizon[j]["reference_student_nll"].append(-ref_student_lp[j])
@@ -197,6 +205,7 @@ def main():
     aggregate = {
         "n": len(detail), "feed_col": args.feed_col,
         "mean_kl": mean([x["mean_kl"] for x in detail]),
+        "mean_reverse_kl": mean([x["mean_reverse_kl"] for x in detail]),
         "top1_agreement": mean([x["top1_agreement"] for x in detail]),
         "mean_teacher_logprob": mean([x["mean_teacher_logprob"] for x in detail]),
         "mean_length": mean([x["length"] for x in detail]),
@@ -206,6 +215,8 @@ def main():
             x["response_ids"][:len(x["reference_ids"])] == x["reference_ids"]
             for x in detail]),
         "reference_mean_kl": mean([x["reference_mean_kl"] for x in detail]),
+        "reference_mean_reverse_kl": mean([
+            x["reference_mean_reverse_kl"] for x in detail]),
         "reference_top1_agreement": mean([
             x["reference_top1_agreement"] for x in detail]),
         "reference_teacher_nll": mean([x["reference_teacher_nll"] for x in detail]),
@@ -220,10 +231,12 @@ def main():
         str(i + 1): {
             "n": len(v["kl"]),
             "mean_kl": mean(v["kl"]),
+            "mean_reverse_kl": mean(v["reverse_kl"]),
             "top1_agreement": mean(v["top1"]),
             "mean_teacher_logprob": mean(v["teacher_lp"]),
             "reference_n": len(v["reference_kl"]),
             "reference_mean_kl": mean(v["reference_kl"]),
+            "reference_mean_reverse_kl": mean(v["reference_reverse_kl"]),
             "reference_top1_agreement": mean(v["reference_top1"]),
             "reference_teacher_nll": mean(v["reference_teacher_nll"]),
             "reference_student_nll": mean(v["reference_student_nll"]),

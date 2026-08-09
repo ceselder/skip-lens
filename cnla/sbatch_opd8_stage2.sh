@@ -24,9 +24,9 @@ run_lane() {
   local train=$ROOT/data/${name}_train.parquet
   local warm=$ROOT/checkpoints/${name}_warm/iter_0000200
 
-  # Fixed-horizon OPD: no KL-triggered EOS target. The teacher sees the real
-  # text and both models are evaluated on the student's sampled prefix.
-  python -m nla.train_opd --objective opd --base-ckpt "$BASE" \
+  # Historical fixed-horizon forward-KL ablation. This is deliberately not
+  # called OPD: true OPD uses the sampled reverse-KL policy-gradient path.
+  python -m nla.train_opd --objective forward_kl --base-ckpt "$BASE" \
     --av-ckpt "$warm" --parquet "$train" --sidecar "$train" \
     --save-dir "$ROOT/checkpoints/${name}_opd8" \
     --num-steps 20000 --lr-decay-steps 20000 --batch-size 2 \

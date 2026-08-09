@@ -46,7 +46,7 @@ train_arm() {
 export -f train_arm latest_checkpoint
 export ROOT SRC VENV BASE TOKEN_BUDGET WARM TRAIN VAL HF_HOME HF_TOKEN_PATH PYTHONPATH
 srun --exclusive --nodes=1 --ntasks=1 --gres=gpu:1 --cpus-per-task=8 --mem=120G \
-  bash -lc "source /workspace-vast/celeste/.keys.env; source $VENV/bin/activate; cd $SRC; train_arm opd repeat_opd8_strongwarm" &
+  bash -lc "source /workspace-vast/celeste/.keys.env; source $VENV/bin/activate; cd $SRC; train_arm forward_kl repeat_opd8_strongwarm" &
 opd_pid=$!
 srun --exclusive --nodes=1 --ntasks=1 --gres=gpu:1 --cpus-per-task=8 --mem=120G \
   bash -lc "source /workspace-vast/celeste/.keys.env; source $VENV/bin/activate; cd $SRC; train_arm sft repeat_sft8_strongwarm" &

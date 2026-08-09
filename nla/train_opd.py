@@ -1,12 +1,14 @@
-"""Train an activation-only lens with on-policy distribution distillation.
+"""Train an activation-only lens with on-policy distillation.
 
 The frozen teacher and trainable student share one base-model allocation:
 
 * teacher forward: adapter disabled, real source text prefilled;
 * student rollout/forward: adapter enabled, only the activation is injected;
 * both predict along the student's sampled prefix;
-* loss: KL(teacher || student), until the first KL threshold violation;
-* violation: supervise EOS once, then mask the remainder of the rollout.
+* OPD loss: sampled per-token KL(student || teacher), optimized through a
+  policy-gradient/importance-ratio loss;
+* ``forward_kl`` preserves the earlier KL(teacher || student) + EOS-cutoff
+  experiment as an explicitly labelled ablation.
 
 ``--objective sft`` provides the matched continuation-SFT control using the
 same loader, actor, optimizer, token counter and wall-clock stopping machinery.
@@ -30,7 +32,7 @@ from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from nla.config import load_nla_config
-from nla.opd import opd_loss
+from nla.opd import forward_kl_cutoff_loss, reverse_kl_policy_loss
 from nla.train_sft import build_lr_lambda
 from nla.utils import build_prompt_text, register_karvonen_hook
 
@@ -119,7 +121,7 @@ def _save(model, tokenizer, sidecar: str, save_dir: Path, step: int, meta: dict)
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--objective", choices=["opd", "sft"], required=True)
+    ap.add_argument("--objective", choices=["opd", "forward_kl", "sft"], required=True)
     ap.add_argument("--base-ckpt", default="Qwen/Qwen3.6-27B")
     ap.add_argument("--av-ckpt", required=True, help="short future-lens SFT LoRA")
     ap.add_argument("--parquet", required=True)
@@ -157,6 +159,11 @@ def main() -> None:
     args = ap.parse_args()
     args.sidecar = args.sidecar or args.parquet
     args.lr_decay_steps = args.lr_decay_steps or args.num_steps
+    if args.objective == "opd" and args.kl_threshold is not None:
+        raise ValueError(
+            "--kl-threshold belongs to the legacy forward_kl/EOS ablation; "
+            "true sampled reverse-KL OPD uses the fixed rollout horizon"
+        )
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -226,22 +233,39 @@ def main() -> None:
         t0 = time.monotonic()
 
         optimizer.zero_grad(set_to_none=True)
-        if args.objective == "opd":
+        behavior_logprobs = None
+        if args.objective in {"opd", "forward_kl"}:
             # Roll out the current student. No gradients are retained through sampling.
             pids = torch.tensor([prompt], dtype=torch.long, device=device).repeat(len(batch), 1)
             vectors_ref[0] = activations
             model.eval()
             try:
                 with torch.no_grad():
-                    generated = model.generate(
+                    rollout = model.generate(
                         input_ids=pids, attention_mask=torch.ones_like(pids),
                         max_new_tokens=args.max_new_tokens, do_sample=True,
                         temperature=args.temperature, top_p=1.0, top_k=0,
                         repetition_penalty=1.0, pad_token_id=tokenizer.eos_token_id,
+                        return_dict_in_generate=True, output_scores=True,
                     )
             finally:
                 vectors_ref[0] = None
+            generated = rollout.sequences
             responses = _trim_generated(generated, prompt_len, eos_ids)
+            if args.objective == "opd":
+                # `scores[j]` is the exact, post-temperature distribution used
+                # by generate for sampled token j (top_p=1/top_k=0 do not
+                # truncate its support). Store it before any optimizer update.
+                behavior_logprobs = torch.zeros(
+                    (len(batch), max(len(x) for x in responses)),
+                    dtype=torch.float32, device=device,
+                )
+                for j, scores in enumerate(rollout.scores):
+                    sampled_j = generated[:, prompt_len + j]
+                    behavior_logprobs[:, j] = F.log_softmax(
+                        scores.float(), dim=-1
+                    ).gather(-1, sampled_j.unsqueeze(-1)).squeeze(-1)
+                behavior_logprobs = behavior_logprobs.detach()
         else:
             responses = [list(map(int, r["target_ids"][:args.max_new_tokens])) for r in batch]
 
@@ -256,7 +280,7 @@ def main() -> None:
         student_prefix_lens = torch.full_like(splens, prompt_len)
 
         teacher_pred = None
-        if args.objective == "opd":
+        if args.objective in {"opd", "forward_kl"}:
             teacher_contexts = [
                 list(map(int, r["teacher_input_ids"][-args.max_teacher_context:]))
                 for r in batch
@@ -272,13 +296,46 @@ def main() -> None:
                 teacher_pred = _predictive_logits(tout, teacher_prefix_lens, width).float()
             del tout, tids, tattn
 
-        model.train()
+        # Gradient tracking is independent of train/eval mode.  OPD stays in
+        # eval mode so dropout cannot make the optimized policy differ from the
+        # policy that produced the stored rollout log-probabilities.
+        model.eval() if args.objective == "opd" else model.train()
         vectors_ref[0] = activations
         try:
             sout = model(input_ids=sids, attention_mask=sattn, use_cache=False).logits
             student_pred = _predictive_logits(sout, student_prefix_lens, width)
             if args.objective == "opd":
-                loss_out = opd_loss(
+                sampled_tokens = torch.full(
+                    (len(batch), width), tokenizer.pad_token_id,
+                    dtype=torch.long, device=device,
+                )
+                for i, response in enumerate(responses):
+                    sampled_tokens[i, : len(response)] = torch.tensor(
+                        response, dtype=torch.long, device=device)
+                loss_out = reverse_kl_policy_loss(
+                    teacher_pred, student_pred, sampled_tokens, valid,
+                    temperature=args.temperature,
+                    behavior_logprobs=behavior_logprobs,
+                )
+                loss = loss_out.loss
+                optimized = loss_out.optimized_tokens
+                with torch.no_grad():
+                    agree = ((teacher_pred.argmax(-1) == student_pred.argmax(-1)) & valid)
+                    mean_reverse_kl = float(loss_out.reverse_kl_sample[valid].mean())
+                    mean_ratio = float(loss_out.importance_ratio[valid].mean())
+                metrics = {
+                    "sampled_reverse_kl": mean_reverse_kl,
+                    "mean_advantage": float(loss_out.advantage[valid].mean()),
+                    "importance_ratio": mean_ratio,
+                    "student_sampled_logp": float(
+                        loss_out.student_sampled_logp[valid].mean()),
+                    "teacher_sampled_logp": float(
+                        loss_out.teacher_sampled_logp[valid].mean()),
+                    "top1_agreement": float(agree.sum() / valid.sum().clamp_min(1)),
+                    "effective_horizon": float(valid.sum(-1).float().mean()),
+                }
+            elif args.objective == "forward_kl":
+                loss_out = forward_kl_cutoff_loss(
                     teacher_pred, student_pred, valid, tokenizer.eos_token_id,
                     args.kl_threshold, args.eos_weight,
                 )
@@ -343,7 +400,7 @@ def main() -> None:
             "kl_threshold": args.kl_threshold, "eos_weight": args.eos_weight,
         }
         collapsed = (
-            args.objective == "opd"
+            args.objective == "forward_kl"
             and step >= args.early_stop_min_steps
             and len(first_cutoff_window) == args.early_stop_window_examples
             and sum(first_cutoff_window) / len(first_cutoff_window)
