@@ -113,6 +113,7 @@ def main() -> None:
         }
 
     examples = []
+    normal_advantage_examples = []
     for distribution in sorted({x["key"][0] for x in rows}):
         candidates = [x for x in rows
                       if x["key"][0] == distribution and x["key"][2] == 42]
@@ -130,6 +131,20 @@ def main() -> None:
                 "normal_readouts": nrec["readouts"], "normal_scores": nrec["scores"],
                 "repeat_readouts": rrec["readouts"], "repeat_scores": rrec["scores"],
             })
+        candidates.sort(key=lambda x: (
+            x["normal"]["workspace_recall"] - x["repeat"]["workspace_recall"],
+            x["normal"]["coherence"] - x["repeat"]["coherence"],
+            x["repeat"]["hallucination"] - x["normal"]["hallucination"],
+        ), reverse=True)
+        for row in candidates[:args.examples_per_distribution]:
+            nrec, rrec = row["normal_record"], row["repeat_record"]
+            normal_advantage_examples.append({
+                "distribution": distribution, "name": row["key"][1], "layer": 42,
+                "prompt": nrec["prompt"], "intermediates": nrec["intermediates"],
+                "target": nrec.get("target"),
+                "normal_readouts": nrec["readouts"], "normal_scores": nrec["scores"],
+                "repeat_readouts": rrec["readouts"], "repeat_scores": rrec["scores"],
+            })
 
     result = {
         "meta": {
@@ -139,6 +154,7 @@ def main() -> None:
         },
         "summary": dict(summary),
         "examples": examples,
+        "normal_advantage_examples": normal_advantage_examples,
     }
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     Path(args.out).write_text(json.dumps(result, indent=2, ensure_ascii=False))
