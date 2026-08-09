@@ -88,8 +88,11 @@ def main():
     ap.add_argument("--generation-batch", type=int, default=8)
     ap.add_argument("--jlens-topk", type=int, default=20)
     ap.add_argument("--max-items-per-dist", type=int, default=0)
+    ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
     layers_to_read = [int(x) for x in args.layers.split(",")]
     modes = args.modes.split(",")
     device = "cuda"
@@ -267,7 +270,7 @@ def main():
         "meta": {
             "base": args.base_ckpt, "checkpoint": args.av_ckpt,
             "official_datasets": True, "layers": layers_to_read,
-            "modes": modes, "samples": args.samples,
+            "modes": modes, "samples": args.samples, "seed": args.seed,
         },
         "records": records,
     }
