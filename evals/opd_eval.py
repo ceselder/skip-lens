@@ -126,9 +126,35 @@ def main():
         top1 = tp.argmax(-1) == sp.argmax(-1)
         tlogp = F.log_softmax(tp, -1)
 
+        # Paired teacher-forced evaluation on the exact same held-out
+        # continuations for every arm. This avoids free-running survivorship
+        # (especially EOS) changing which prefixes are compared.
+        refs = [list(map(int, row["target_ids"][:args.max_new_tokens])) for row in batch]
+        ref_width = max(len(x) for x in refs)
+        rtids, rtattn, _ = _right_pad(
+            [c + ref for c, ref in zip(contexts, refs)], tok.pad_token_id, device)
+        with torch.no_grad(), model.disable_adapter():
+            rtl = model(input_ids=rtids, attention_mask=rtattn, use_cache=False).logits
+            rtp = _predictive_logits(rtl, tplens, ref_width).float()
+        rsids, rsattn, _ = _right_pad(
+            [prompt + ref for ref in refs], tok.pad_token_id, device)
+        vref[0] = feeds
+        try:
+            with torch.no_grad():
+                rsl = model(input_ids=rsids, attention_mask=rsattn, use_cache=False).logits
+                rsp = _predictive_logits(rsl, splens, ref_width).float()
+        finally:
+            vref[0] = None
+        rkl = teacher_student_kl(rtp, rsp)
+        rtop1 = rtp.argmax(-1) == rsp.argmax(-1)
+        rtlogp = F.log_softmax(rtp, -1)
+        rslogp = F.log_softmax(rsp, -1)
+
         for i, (row, response) in enumerate(zip(batch, responses)):
             teacher_lp = [float(tlogp[i, j, response[j]]) for j in range(len(response))]
-            ref = list(map(int, row["target_ids"][:args.max_new_tokens]))
+            ref = refs[i]
+            ref_teacher_lp = [float(rtlogp[i, j, token]) for j, token in enumerate(ref)]
+            ref_student_lp = [float(rslogp[i, j, token]) for j, token in enumerate(ref)]
             prefix = 0
             for a, b in zip(response, ref):
                 if a != b:
@@ -146,6 +172,11 @@ def main():
                 "kl_by_token": [float(x) for x in kl[i, :len(response)]],
                 "top1_agreement": float(top1[i, :len(response)].float().mean()),
                 "mean_teacher_logprob": mean(teacher_lp),
+                "reference_mean_kl": float(rkl[i, :len(ref)].mean()),
+                "reference_top1_agreement": float(
+                    rtop1[i, :len(ref)].float().mean()),
+                "reference_teacher_nll": -mean(ref_teacher_lp),
+                "reference_student_nll": -mean(ref_student_lp),
             }
             detail.append(rec)
             for j in range(len(response)):
@@ -165,6 +196,11 @@ def main():
         "full_reference_match": mean([
             x["response_ids"][:len(x["reference_ids"])] == x["reference_ids"]
             for x in detail]),
+        "reference_mean_kl": mean([x["reference_mean_kl"] for x in detail]),
+        "reference_top1_agreement": mean([
+            x["reference_top1_agreement"] for x in detail]),
+        "reference_teacher_nll": mean([x["reference_teacher_nll"] for x in detail]),
+        "reference_student_nll": mean([x["reference_student_nll"] for x in detail]),
     }
     first_token_kl = [x["kl_by_token"][0] for x in detail if x["kl_by_token"]]
     aggregate["first_token_kl_quantiles"] = {
