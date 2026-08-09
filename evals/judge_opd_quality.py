@@ -48,6 +48,10 @@ def parse(row, text, err):
     try:
         start = text.index("{")
         obj, _ = json.JSONDecoder().raw_decode(text[start:])
+        required = {"coherence", "support", "hallucination", "premature_eos"}
+        missing = required - set(obj)
+        if missing:
+            raise ValueError(f"missing judge fields: {sorted(missing)}")
         return {**row, "quality": obj}
     except (ValueError, KeyError, TypeError) as exc:
         return {**row, "judge_error": f"parse: {exc}: {text[:200]}"}
