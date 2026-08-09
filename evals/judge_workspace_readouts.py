@@ -172,11 +172,21 @@ def main():
     ap.add_argument("--workers", type=int, default=24)
     ap.add_argument("--max-tokens", type=int, default=4096,
                     help="judge output budget; must include Sonnet 5 reasoning tokens")
+    ap.add_argument("--layers", default=None,
+                    help="optional comma-separated layer subset")
+    ap.add_argument("--modes", default=None,
+                    help="optional comma-separated readout-mode subset")
     ap.add_argument("--sync", action="store_true",
                     help="use synchronous low-priority calls (small smoke tests only)")
     args = ap.parse_args()
     data = json.loads(Path(args.input).read_text())
     source_records = data["records"]
+    if args.layers:
+        selected_layers = {int(x) for x in args.layers.split(",")}
+        source_records = [x for x in source_records if x["layer"] in selected_layers]
+    if args.modes:
+        selected_modes = set(args.modes.split(","))
+        source_records = [x for x in source_records if x["mode"] in selected_modes]
     if args.sync:
         def one(record):
             return parse(record, *llm_call(
@@ -200,7 +210,11 @@ def main():
             for i, (text, err) in zip(retry_indices, retry_results):
                 records[i] = parse(source_records[i], text, err)
     result = {
-        "meta": {**data["meta"], "judge_model": MODEL},
+        "meta": {
+            **data["meta"], "judge_model": MODEL,
+            "judge_layers": sorted({x["layer"] for x in source_records}),
+            "judge_modes": sorted({x["mode"] for x in source_records}),
+        },
         "summary": summarise(records),
         "summary_band": summarise_band(records),
         "judge_errors": sum("judge_error" in x for x in records),
