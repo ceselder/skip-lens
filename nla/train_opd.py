@@ -328,7 +328,7 @@ def main() -> None:
                     "mean_advantage": float(loss_out.advantage[valid].mean()),
                     "importance_ratio": mean_ratio,
                     "student_sampled_logp": float(
-                        loss_out.student_sampled_logp[valid].mean()),
+                        loss_out.student_sampled_logp[valid].mean().detach()),
                     "teacher_sampled_logp": float(
                         loss_out.teacher_sampled_logp[valid].mean()),
                     "top1_agreement": float(agree.sum() / valid.sum().clamp_min(1)),
