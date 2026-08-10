@@ -12,16 +12,17 @@ set -euo pipefail
 # Corrected OPD-vs-SFT experiment:
 #   shared first half: 10,000 SFT response tokens from T=1 FineWeb rollouts;
 #   second half:       10,000 sampled reverse-KL OPD tokens OR 10,000 SFT tokens.
-# Both arms use the same rows, warm checkpoint, optimizer family, LR, batch size,
-# and 8-token horizon.  The OPD token mask clips its final batch exactly.
+# The two phases use disjoint rows. Both arms use the same stage-two rows, warm
+# checkpoint, optimizer family, LR, batch size, and 8-token horizon. The OPD
+# token mask clips its final batch exactly.
 
 ROOT=${ROOT:-/workspace-vast/celeste/skip-lens-opd}
 SRC=$ROOT/src
 VENV=$ROOT/venv
 BASE=${BASE:-Qwen/Qwen3.6-27B}
-EXP=$ROOT/results/fineweb_t1_half
+EXP=$ROOT/results/fineweb_t1_disjoint
 DATA=$ROOT/data/fineweb_t1_half
-CKPTS=$ROOT/checkpoints/fineweb_t1_half
+CKPTS=$ROOT/checkpoints/fineweb_t1_disjoint
 TOKEN_BUDGET=10000
 
 source /workspace-vast/celeste/.keys.env
@@ -34,14 +35,16 @@ cd "$SRC"
 
 # One exact T=1.0, untruncated model continuation is the static SFT label for
 # each activation. Uniform positions avoid an entropy-selection confound.
-srun --exclusive --nodes=1 --ntasks=1 --gres=gpu:1 --cpus-per-task=8 --mem=120G \
-  python -m pretrain.collect_ao_data \
-    --base-ckpt "$BASE" \
-    --corpus HuggingFaceFW/fineweb --corpus-config sample-10BT \
-    --layers 62 42 --n-docs 700 --positions-per-doc 5 \
-    --rollouts 1 --rollout-len 8 --temperature 1.0 --top-p 1.0 \
-    --no-decision-points --seed 20260810 \
-    --out "$DATA/collected.parquet"
+if [ ! -f "$DATA/collected.parquet" ]; then
+  srun --exclusive --nodes=1 --ntasks=1 --gres=gpu:1 --cpus-per-task=8 --mem=120G \
+    python -m pretrain.collect_ao_data \
+      --base-ckpt "$BASE" \
+      --corpus HuggingFaceFW/fineweb --corpus-config sample-10BT \
+      --layers 62 42 --n-docs 700 --positions-per-doc 5 \
+      --rollouts 1 --rollout-len 8 --temperature 1.0 --top-p 1.0 \
+      --no-decision-points --seed 20260810 \
+      --out "$DATA/collected.parquet"
+fi
 
 python -m pretrain.finalize_opd_data \
   --collected "$DATA/collected.parquet" \
@@ -49,11 +52,18 @@ python -m pretrain.finalize_opd_data \
   --out-train "$DATA/train.parquet" --out-val "$DATA/val.parquet" \
   --max-target-tokens 8 --val-frac 0.10 --split-seed 20260810
 
+# The phases contain 1,250 distinct rows each: 1,250 * 8 = 10,000 tokens.
+python -m pretrain.split_opd_phases \
+  --input "$DATA/train.parquet" \
+  --out-warm "$DATA/warm_train.parquet" \
+  --out-stage2 "$DATA/stage2_train.parquet" \
+  --rows-per-phase 1250 --seed 20260810
+
 # Create a zero-step adapter, then train on exact stored token IDs.  This avoids
 # decode/re-tokenize drift in the general text SFT trainer.
 srun --exclusive --nodes=1 --ntasks=1 --gres=gpu:1 --cpus-per-task=8 --mem=120G \
   python -m nla.train_sft --mode av --base-ckpt "$BASE" \
-    --parquet "$DATA/train.parquet" --sidecar "$DATA/train.parquet" \
+    --parquet "$DATA/warm_train.parquet" --sidecar "$DATA/warm_train.parquet" \
     --save-dir "$CKPTS/initial" --num-steps 0 --batch-size 2 \
     --use-lora --lora-r 64 --lora-alpha 16 --save-initial --no-wandb
 
@@ -62,8 +72,8 @@ INITIAL=$CKPTS/initial/iter_0000000
 # 625 updates * batch 2 * 8 stored target IDs = exactly 10,000 shared SFT tokens.
 srun --exclusive --nodes=1 --ntasks=1 --gres=gpu:1 --cpus-per-task=8 --mem=120G \
   python -m nla.train_opd --objective sft --base-ckpt "$BASE" \
-    --av-ckpt "$INITIAL" --parquet "$DATA/train.parquet" \
-    --sidecar "$DATA/train.parquet" --save-dir "$CKPTS/warm_sft_10k" \
+    --av-ckpt "$INITIAL" --parquet "$DATA/warm_train.parquet" \
+    --sidecar "$DATA/warm_train.parquet" --save-dir "$CKPTS/warm_sft_10k" \
     --num-steps 625 --lr-decay-steps 625 --batch-size 2 \
     --max-new-tokens 8 --max-optimized-tokens "$TOKEN_BUDGET" \
     --lr 3e-5 --min-lr 3e-5 --save-every 625 \
@@ -76,8 +86,8 @@ train_arm() {
   local objective=$1
   local name=$2
   python -m nla.train_opd --objective "$objective" --base-ckpt "$BASE" \
-    --av-ckpt "$WARM" --parquet "$DATA/train.parquet" \
-    --sidecar "$DATA/train.parquet" --save-dir "$CKPTS/$name" \
+    --av-ckpt "$WARM" --parquet "$DATA/stage2_train.parquet" \
+    --sidecar "$DATA/stage2_train.parquet" --save-dir "$CKPTS/$name" \
     --num-steps 20000 --lr-decay-steps 20000 --batch-size 2 \
     --max-new-tokens 8 --max-optimized-tokens "$TOKEN_BUDGET" \
     --temperature 1.0 --lr 3e-5 --min-lr 3e-5 --save-every 500 \
