@@ -5,7 +5,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=128G
-#SBATCH --time=48:00:00
+#SBATCH --time=12:00:00
 #SBATCH --output=/workspace-vast/celeste/skip-lens-opd/logs/%x_%j.out
 set -euo pipefail
 
@@ -26,19 +26,19 @@ export PYTHONPATH=$SRC
 mkdir -p "$DATA" "$CKPTS" "$RESULTS" "$ROOT/logs"
 cd "$SRC"
 
-# 15,000 updates * batch 16 = 240,000 example presentations, about 1.33 passes
-# through 180,000 phrase-disjoint training rows and roughly 2M target tokens.
+# 3,125 updates * batch 16 = exactly 50,000 example presentations, about 1.11
+# passes through 45,000 phrase-disjoint training rows and roughly 0.4M tokens.
 # `all` covers attention, MLP, and architecture-specific DeltaNet projections.
 python -m nla.train_sft --mode av --base-ckpt "$BASE" \
   --parquet "$DATA/train.parquet" --sidecar "$DATA/train.parquet" \
   --heldout-parquet "$DATA/val.parquet" --heldout-rows 2000 \
-  --heldout-every 500 --save-dir "$CKPTS" \
-  --num-steps 15000 --batch-size 16 --gradient-accumulation-steps 1 \
+  --heldout-every 250 --save-dir "$CKPTS" \
+  --num-steps 3125 --batch-size 16 --gradient-accumulation-steps 1 \
   --use-lora --lora-r 64 --lora-alpha 16 --lora-scope all \
-  --lr 3e-5 --min-lr 2e-6 --lr-warmup-steps 200 \
-  --save-every 500 --sample-every 0 \
+  --lr 3e-5 --min-lr 2e-6 --lr-warmup-steps 100 \
+  --save-every 250 --sample-every 0 \
   --wandb-project skip-lens-opd --wandb-group repeat-scaled-all \
-  --wandb-name repeat_50kphrases_bs16_allmodules
+  --wandb-name repeat_50kexamples_bs16_allmodules
 
 python scripts/select_best_sft_checkpoint.py \
   --metrics "$CKPTS/metrics.jsonl" --checkpoint-dir "$CKPTS" \

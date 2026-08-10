@@ -24,16 +24,16 @@ export DATA
 mkdir -p "$DATA" "$ROOT/logs"
 cd "$SRC"
 
-# Four independent OS-CSPRNG streams, 12,500 phrases each. Phrase hashes define
-# each shard's train/validation split; generated phrases are overwhelmingly
-# unique, and the merged split is checked before training.
+# Four independent OS-CSPRNG streams, 3,125 phrases each: 12,500 phrases and
+# 50,000 activation examples total. Phrase hashes define each shard's
+# train/validation split; the merged split is checked before training.
 for shard in 0 1 2 3; do
   srun --exclusive --nodes=1 --ntasks=1 --gres=gpu:1 \
     --cpus-per-task=8 --mem=120G \
     python -m pretrain.collect_repeat_data --base-model "$BASE" \
       --out-train "$DATA/shard_${shard}_train.parquet" \
       --out-val "$DATA/shard_${shard}_val.parquet" \
-      --n-phrases 12500 --phrase-words 40 --positions-per-phrase 4 \
+      --n-phrases 3125 --phrase-words 40 --positions-per-phrase 4 \
       --max-span 16 --layers 42 62 --target-layer 62 --batch-size 16 &
 done
 wait
