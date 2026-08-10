@@ -9,7 +9,6 @@ from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
-from transformers import AutoTokenizer
 
 
 def main() -> None:
@@ -25,7 +24,6 @@ def main() -> None:
     src = Path(args.input)
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    tok = AutoTokenizer.from_pretrained(args.base_ckpt)
     pf = pq.ParquetFile(src)
     writer = None
     rows_written = 0
@@ -36,6 +34,7 @@ def main() -> None:
                        for x in table["target_ids"].to_pylist()]
             continuations = [list(map(int, x[:args.tokens]))
                              for x in table["continuation_ids"].to_pylist()]
+            original_responses = table["response"].to_pylist()
             responses = []
             for row_idx, target in enumerate(targets):
                 if len(target) != args.tokens:
@@ -46,11 +45,17 @@ def main() -> None:
                     raise ValueError(
                         f"row {rows_written + row_idx} has a short continuation"
                     )
-                response = tok.decode(target, skip_special_tokens=False)
-                if tok.encode(response, add_special_tokens=False) != target:
+                original = original_responses[row_idx]
+                words = original.split()
+                if len(words) < args.tokens:
                     raise ValueError(
-                        f"target decode/encode mismatch at row {rows_written + row_idx}"
+                        f"row {rows_written + row_idx} has only {len(words)} response words"
                     )
+                # Every generator word was pre-filtered to exactly one token in
+                # both bare and space-prefixed forms. Preserve the source's
+                # leading whitespace and take the first N words.
+                leading = original[:len(original) - len(original.lstrip())]
+                response = leading + " ".join(words[:args.tokens])
                 responses.append(response)
             replacements = {
                 "target_ids": pa.array(
