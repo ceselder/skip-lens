@@ -35,6 +35,16 @@ mode-seeking early termination, not evidence that the activation has run out
 of information. OPD is also slower: 8.08 versus 16.55 optimized tokens/s on
 normal data and 6.50 versus 10.96 on repeat data.
 
+The Sonnet-5 judge finds no normal-L62 coherence difference (+0.011/5, CI
+-0.171 to +0.194). Support trends upward by 0.166/5 (CI -0.006 to +0.343)
+and hallucination trends downward by 6.9 points (CI -15.4 to +1.7), but neither
+is conclusive. Repeat-L62 OPD is 0.582/5 more coherent (CI +0.484 to +0.684)
+and 0.262/5 better supported (CI +0.160 to +0.367), because it often emits a
+correct short prefix and stops while SFT continues into repetitions. That is a
+real readout-quality tradeoff, but not greater continuation reliability: OPD
+loses 2.28 tokens of mean horizon (CI -2.38 to -2.18) and has worse reference
+NLL and prefix accuracy.
+
 ## Retired fixed-horizon forward-KL ablation (not true OPD)
 
 All training arms start from the same 200-step future-lens SFT checkpoint.
