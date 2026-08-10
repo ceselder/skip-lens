@@ -3,7 +3,9 @@
 Unlike ``opd_eval``, this rank-only evaluator skips generation and the full-context
 teacher forward.  It teacher-forces the held-out eight-token reference through the
 activation-only student and records the target token's full-vocabulary rank at each
-position for every requested activation column.
+position for every requested activation column.  It also ranks the target against
+the 40 words in its random phrase.  The latter distinguishes ordered continuation
+prediction from merely assigning high probability to the phrase's bag of words.
 """
 
 from __future__ import annotations
@@ -28,6 +30,30 @@ def exact_ranks(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
     """Return one-indexed target ranks; ties receive their best possible rank."""
     target_logits = logits.gather(-1, targets.unsqueeze(-1))
     return (logits > target_logits).sum(-1) + 1
+
+
+def candidate_rank(logits: torch.Tensor, target_id: int,
+                   candidate_ids: list[int]) -> int:
+    """One-indexed target rank within ``candidate_ids`` (best rank on ties)."""
+    target_logit = logits[target_id]
+    return int((logits[candidate_ids] > target_logit).sum().item()) + 1
+
+
+def phrase_token_ids(row: dict, tok, target_len: int) -> tuple[list[int], int]:
+    """Tokenize one generated phrase and verify its target is the anchored suffix."""
+    words = row["phrase"].split()
+    if len(words) != 40 or len(set(words)) != 40:
+        raise ValueError("repeat-control phrases must contain 40 unique words")
+    encoded = [tok.encode(" " + word, add_special_tokens=False) for word in words]
+    bad = [(word, ids) for word, ids in zip(words, encoded) if len(ids) != 1]
+    if bad:
+        raise ValueError(f"phrase words are not single space-prefixed tokens: {bad[:3]}")
+    ids = [x[0] for x in encoded]
+    anchor = int(row["anchor"])
+    expected = list(map(int, row["target_ids"][:target_len]))
+    if ids[anchor:anchor + len(expected)] != expected:
+        raise ValueError("target_ids do not match phrase[anchor:anchor + target_len]")
+    return ids, anchor
 
 
 def main() -> None:
@@ -59,15 +85,24 @@ def main() -> None:
         cfg.injection_left_neighbor_id, cfg.injection_right_neighbor_id,
     )
 
-    cols = ["prompt", "target_ids", *feed_cols]
+    cols = ["prompt", "target_ids", "phrase", "anchor", *feed_cols]
     table = pq.read_table(args.parquet, columns=cols).slice(0, args.max_rows)
     rows = table.to_pylist()
+    phrase_meta = [phrase_token_ids(row, tok, args.max_tokens) for row in rows]
     prompt = _student_prompt_ids(rows[:1], tok, cfg.injection_char)
     by_feed = {col: [[] for _ in range(args.max_tokens)] for col in feed_cols}
     nll_by_feed = {col: [[] for _ in range(args.max_tokens)] for col in feed_cols}
+    phrase_rank_by_feed = {
+        col: [[] for _ in range(args.max_tokens)] for col in feed_cols
+    }
+    remaining_rank_by_feed = {
+        col: [[] for _ in range(args.max_tokens)] for col in feed_cols
+    }
+    remaining_count_by_position = [[] for _ in range(args.max_tokens)]
 
     for b0 in range(0, len(rows), args.batch_size):
         batch = rows[b0:b0 + args.batch_size]
+        batch_phrase_meta = phrase_meta[b0:b0 + args.batch_size]
         refs = [list(map(int, r["target_ids"][:args.max_tokens])) for r in batch]
         width = max(map(len, refs))
         ids, attn, _ = _right_pad([prompt + ref for ref in refs], tok.pad_token_id, "cuda")
@@ -92,9 +127,19 @@ def main() -> None:
             ranks = exact_ranks(pred, targets)
             nll = -F.log_softmax(pred, -1).gather(-1, targets.unsqueeze(-1)).squeeze(-1)
             for i, ref in enumerate(refs):
+                phrase_ids, anchor = batch_phrase_meta[i]
                 for j in range(len(ref)):
                     by_feed[col][j].append(int(ranks[i, j]))
                     nll_by_feed[col][j].append(float(nll[i, j]))
+                    phrase_rank_by_feed[col][j].append(
+                        candidate_rank(pred[i, j], ref[j], phrase_ids)
+                    )
+                    remaining_ids = phrase_ids[anchor + j:]
+                    remaining_rank_by_feed[col][j].append(
+                        candidate_rank(pred[i, j], ref[j], remaining_ids)
+                    )
+                    if col == feed_cols[0]:
+                        remaining_count_by_position[j].append(len(remaining_ids))
             del logits, pred, ranks, nll
         print(f"[rank] {min(b0 + len(batch), len(rows))}/{len(rows)}", flush=True)
 
@@ -109,6 +154,9 @@ def main() -> None:
         result["feed_cols"][col] = {
             "rank_by_position": by_feed[col],
             "nll_by_position": nll_by_feed[col],
+            "phrase_rank_by_position": phrase_rank_by_feed[col],
+            "remaining_phrase_rank_by_position": remaining_rank_by_feed[col],
+            "remaining_phrase_candidate_count_by_position": remaining_count_by_position,
             "summary_by_position": [
                 {
                     "position": j + 1,
@@ -118,6 +166,34 @@ def main() -> None:
                     "mean_log10_rank": float(np.mean(np.log10(rs))),
                     "rank_quantiles": {
                         str(q): float(np.quantile(rs, q)) for q in (0.1, 0.25, 0.5, 0.75, 0.9)
+                    },
+                    "phrase_word_rank": {
+                        "candidate_count": 40,
+                        "top1_accuracy": float(np.mean(
+                            np.asarray(phrase_rank_by_feed[col][j]) == 1
+                        )),
+                        "mean_reciprocal_rank": float(np.mean(
+                            1.0 / np.asarray(phrase_rank_by_feed[col][j])
+                        )),
+                        "quantiles": {
+                            str(q): float(np.quantile(phrase_rank_by_feed[col][j], q))
+                            for q in (0.1, 0.25, 0.5, 0.75, 0.9)
+                        },
+                    },
+                    "remaining_phrase_word_rank": {
+                        "mean_candidate_count": float(np.mean(
+                            remaining_count_by_position[j]
+                        )),
+                        "top1_accuracy": float(np.mean(
+                            np.asarray(remaining_rank_by_feed[col][j]) == 1
+                        )),
+                        "mean_reciprocal_rank": float(np.mean(
+                            1.0 / np.asarray(remaining_rank_by_feed[col][j])
+                        )),
+                        "quantiles": {
+                            str(q): float(np.quantile(remaining_rank_by_feed[col][j], q))
+                            for q in (0.1, 0.25, 0.5, 0.75, 0.9)
+                        },
                     },
                 }
                 for j, rs in enumerate(by_feed[col])
