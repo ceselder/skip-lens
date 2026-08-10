@@ -50,7 +50,7 @@ for feed in activation_vector act_L42; do
   if [ "$feed" = activation_vector ]; then label=L62; else label=L42; fi
   python -m evals.opd_eval --base-ckpt "$BASE" --av-ckpt "$BEST" \
     --parquet "$DATA/val.parquet" --sidecar "$DATA/val.parquet" \
-    --feed-col "$feed" --max-rows 1024 --max-new-tokens 16 --batch-size 8 \
+    --feed-col "$feed" --max-rows 1024 --max-new-tokens 8 --batch-size 8 \
     --out "$RESULTS/repeat_scaled_${label}_eval.json"
 done
 

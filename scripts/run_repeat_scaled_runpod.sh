@@ -79,7 +79,7 @@ for feed in activation_vector act_L42; do
   CUDA_VISIBLE_DEVICES=0 python -m evals.opd_eval --base-ckpt "$BASE" \
     --av-ckpt "$BEST" --parquet "$DATA/val.parquet" \
     --sidecar "$DATA/val.parquet" --feed-col "$feed" \
-    --max-rows 1024 --max-new-tokens 16 --batch-size 8 \
+    --max-rows 1024 --max-new-tokens 8 --batch-size 8 \
     --out "$RESULTS/repeat_scaled_${label}_eval.json"
 done
 
