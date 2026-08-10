@@ -136,6 +136,40 @@ def teacher_student_kl(
     return (t_logp.exp() * (t_logp - s_logp)).sum(dim=-1)
 
 
+def teacher_student_topk_tail_kl(
+    teacher_logits: torch.Tensor,
+    student_logits: torch.Tensor,
+    top_k: int,
+) -> torch.Tensor:
+    """Coarse-grained forward KL over teacher top-k tokens plus one tail bin.
+
+    Renormalizing only the top-k tokens discards teacher tail mass and changes
+    the objective.  This instead keeps each top-k token as its own category and
+    aggregates every other vocabulary item into a single category.  It is a
+    principled lower bound on full-vocabulary KL and preserves normalization.
+    """
+    if teacher_logits.shape != student_logits.shape:
+        raise ValueError(
+            f"teacher {tuple(teacher_logits.shape)} != student "
+            f"{tuple(student_logits.shape)}"
+        )
+    vocab = teacher_logits.shape[-1]
+    if not 0 < top_k < vocab:
+        raise ValueError(f"top_k must be in [1, {vocab - 1}], got {top_k}")
+    t_logp = F.log_softmax(teacher_logits.float(), dim=-1)
+    s_logp = F.log_softmax(student_logits.float(), dim=-1)
+    t_top_logp, top_ids = t_logp.topk(top_k, dim=-1)
+    s_top_logp = s_logp.gather(-1, top_ids)
+    t_top = t_top_logp.exp()
+    s_top = s_top_logp.exp()
+    eps = torch.finfo(torch.float32).tiny
+    t_tail = (1.0 - t_top.sum(dim=-1)).clamp_min(eps)
+    s_tail = (1.0 - s_top.sum(dim=-1)).clamp_min(eps)
+    top_term = (t_top * (t_top_logp - s_top_logp)).sum(dim=-1)
+    tail_term = t_tail * (t_tail.log() - s_tail.log())
+    return top_term + tail_term
+
+
 def student_teacher_kl(
     teacher_logits: torch.Tensor,
     student_logits: torch.Tensor,

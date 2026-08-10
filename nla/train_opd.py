@@ -9,6 +9,9 @@ The frozen teacher and trainable student share one base-model allocation:
   policy-gradient/importance-ratio loss;
 * ``forward_kl`` preserves the earlier KL(teacher || student) + EOS-cutoff
   experiment as an explicitly labelled ablation.
+* ``token_kl`` distills the teacher distribution on the dataset continuation's
+  teacher-forced prefixes.  It supports either exact vocabulary KL or a
+  teacher-top-k-plus-tail coarse graining.
 
 ``--objective sft`` provides the matched continuation-SFT control using the
 same loader, actor, optimizer, token counter and wall-clock stopping machinery.
@@ -32,7 +35,12 @@ from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from nla.config import load_nla_config
-from nla.opd import forward_kl_cutoff_loss, reverse_kl_policy_loss
+from nla.opd import (
+    forward_kl_cutoff_loss,
+    reverse_kl_policy_loss,
+    teacher_student_kl,
+    teacher_student_topk_tail_kl,
+)
 from nla.train_sft import build_lr_lambda
 from nla.utils import build_prompt_text, register_karvonen_hook
 
@@ -134,7 +142,11 @@ def _save(model, tokenizer, sidecar: str, save_dir: Path, step: int, meta: dict)
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--objective", choices=["opd", "forward_kl", "sft"], required=True)
+    ap.add_argument(
+        "--objective",
+        choices=["opd", "forward_kl", "token_kl", "sft"],
+        required=True,
+    )
     ap.add_argument("--base-ckpt", default="Qwen/Qwen3.6-27B")
     ap.add_argument("--av-ckpt", required=True, help="short future-lens SFT LoRA")
     ap.add_argument("--parquet", required=True)
@@ -145,6 +157,15 @@ def main() -> None:
     ap.add_argument("--max-new-tokens", type=int, default=16)
     ap.add_argument("--max-teacher-context", type=int, default=512)
     ap.add_argument("--temperature", type=float, default=1.0)
+    ap.add_argument(
+        "--teacher-top-k",
+        type=int,
+        default=0,
+        help=(
+            "token_kl only: 0 uses exact vocabulary KL; positive K uses "
+            "teacher top-K categories plus one tail-mass bin"
+        ),
+    )
     ap.add_argument("--kl-threshold", type=float, default=None)
     ap.add_argument("--eos-weight", type=float, default=1.0)
     ap.add_argument("--lr", type=float, default=3e-5)
@@ -177,6 +198,8 @@ def main() -> None:
             "--kl-threshold belongs to the legacy forward_kl/EOS ablation; "
             "true sampled reverse-KL OPD uses the fixed rollout horizon"
         )
+    if args.objective != "token_kl" and args.teacher_top_k:
+        raise ValueError("--teacher-top-k is only valid with --objective token_kl")
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -303,7 +326,7 @@ def main() -> None:
         student_prefix_lens = torch.full_like(splens, prompt_len)
 
         teacher_pred = None
-        if args.objective in {"opd", "forward_kl"}:
+        if args.objective in {"opd", "forward_kl", "token_kl"}:
             teacher_contexts = [
                 list(map(int, r["teacher_input_ids"][-args.max_teacher_context:]))
                 for r in batch
@@ -343,7 +366,9 @@ def main() -> None:
                 loss = loss_out.loss
                 optimized = loss_out.optimized_tokens
                 with torch.no_grad():
-                    agree = ((teacher_pred.argmax(-1) == student_pred.argmax(-1)) & valid)
+                    agree = (
+                        (teacher_pred.argmax(-1) == student_pred.argmax(-1)) & valid
+                    )
                     mean_reverse_kl = float(loss_out.reverse_kl_sample[valid].mean())
                     mean_ratio = float(loss_out.importance_ratio[valid].mean())
                 metrics = {
@@ -381,6 +406,24 @@ def main() -> None:
                     "rolling_first_cutoff_rate": (
                         sum(first_cutoff_window) / len(first_cutoff_window)
                     ),
+                }
+            elif args.objective == "token_kl":
+                if args.teacher_top_k:
+                    kl = teacher_student_topk_tail_kl(
+                        teacher_pred, student_pred, args.teacher_top_k,
+                    )
+                else:
+                    kl = teacher_student_kl(teacher_pred, student_pred)
+                if not bool(valid.any()):
+                    raise ValueError("token-KL batch has no valid tokens")
+                loss = kl[valid].mean()
+                optimized = int(valid.sum().item())
+                with torch.no_grad():
+                    agree = ((teacher_pred.argmax(-1) == student_pred.argmax(-1)) & valid)
+                metrics = {
+                    "teacher_student_token_kl": float(loss.detach()),
+                    "teacher_top_k": args.teacher_top_k,
+                    "top1_agreement": float(agree.sum() / valid.sum().clamp_min(1)),
                 }
             else:
                 targets = torch.full((len(batch), width), -100, dtype=torch.long, device=device)

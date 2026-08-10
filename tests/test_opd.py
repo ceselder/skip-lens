@@ -1,13 +1,14 @@
 import torch
 
-from nla.train_opd import _clip_valid_to_budget
 from nla.opd import (
     first_kl_cutoff_masks,
     forward_kl_cutoff_loss,
     reverse_kl_policy_loss,
     student_teacher_kl,
     teacher_student_kl,
+    teacher_student_topk_tail_kl,
 )
+from nla.train_opd import _clip_valid_to_budget
 
 
 def test_exact_token_budget_clips_only_final_valid_positions():
@@ -35,6 +36,32 @@ def test_forward_and_reverse_kl_are_distinct():
     assert forward.item() != reverse.item()
     assert forward.item() > 0
     assert reverse.item() > 0
+
+
+def test_topk_tail_kl_is_zero_for_identical_logits():
+    logits = torch.randn(2, 3, 11)
+    kl = teacher_student_topk_tail_kl(logits, logits, top_k=4)
+    assert torch.allclose(kl, torch.zeros_like(kl), atol=1e-6)
+
+
+def test_topk_tail_kl_matches_binary_coarse_graining():
+    teacher = torch.tensor([[[3.0, 1.0, 0.0]]])
+    student = torch.tensor([[[0.0, 2.0, 1.0]]])
+    got = teacher_student_topk_tail_kl(teacher, student, top_k=1)
+    tp = teacher.softmax(-1)[..., 0]
+    sp = student.softmax(-1)[..., 0]
+    expected = tp * (tp.log() - sp.log()) + (1 - tp) * (
+        (1 - tp).log() - (1 - sp).log()
+    )
+    assert torch.allclose(got, expected, atol=1e-6)
+
+
+def test_topk_tail_kl_matches_exact_when_tail_has_one_token():
+    teacher = torch.randn(2, 3, 7)
+    student = torch.randn(2, 3, 7)
+    exact = teacher_student_kl(teacher, student)
+    coarse = teacher_student_topk_tail_kl(teacher, student, top_k=6)
+    assert torch.allclose(coarse, exact, atol=2e-6)
 
 
 def test_first_violation_becomes_eos_and_masks_suffix():
