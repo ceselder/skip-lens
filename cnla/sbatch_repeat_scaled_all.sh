@@ -35,6 +35,7 @@ python -m nla.train_sft --mode av --base-ckpt "$BASE" \
   --heldout-every 250 --save-dir "$CKPTS" \
   --num-steps 1563 --batch-size 16 --gradient-accumulation-steps 1 \
   --use-lora --lora-r 64 --lora-alpha 16 --lora-scope all \
+  --no-append-response-eos \
   --lr 3e-5 --min-lr 2e-6 --lr-warmup-steps 100 \
   --save-every 250 --sample-every 0 \
   --wandb-project skip-lens-opd --wandb-group repeat-scaled-all \

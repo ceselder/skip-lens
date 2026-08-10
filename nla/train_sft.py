@@ -359,7 +359,7 @@ def build_lr_lambda(warmup_steps, total_steps, min_lr_ratio):
 
 @torch.no_grad()
 def heldout_av_ce(model, tokenizer, rows, cfg, vectors_ref, device, *,
-                  max_len=1024, micro_batch=16):
+                  max_len=1024, micro_batch=16, append_response_eos=True):
     """Held-out AV val loss: mean token-CE on response tokens over doc-disjoint
     held-out AV rows — the SAME per-response-token CE the AV trains on, so it's
     directly comparable to the train `loss` (train loss is a memorization proxy;
@@ -369,7 +369,7 @@ def heldout_av_ce(model, tokenizer, rows, cfg, vectors_ref, device, *,
         chunk = rows[cs:cs + micro_batch]
         ids, attn, loss_mask, v_batch = _av_prepare_chunk(
             chunk, tokenizer, cfg.injection_char, device,
-            max_len=max_len)
+            max_len=max_len, append_response_eos=append_response_eos)
         vectors_ref[0] = v_batch
         try:
             logits = model(input_ids=ids, attention_mask=attn).logits.float()
@@ -386,7 +386,9 @@ def heldout_av_ce(model, tokenizer, rows, cfg, vectors_ref, device, *,
     return (tot_loss / max(tot_tok, 1)), len(rows)
 
 
-def _av_prepare_chunk(rows, tokenizer, inject_char, device, max_len=1024):
+def _av_prepare_chunk(
+    rows, tokenizer, inject_char, device, max_len=1024, append_response_eos=True,
+):
     """Return (input_ids, attn, loss_mask, v_batch) — all [B, T] (or [B, d])."""
     full_ids_list = []
     prompt_lens = []
@@ -403,8 +405,12 @@ def _av_prepare_chunk(rows, tokenizer, inject_char, device, max_len=1024):
             msgs, tokenize=False, add_generation_prompt=True, enable_thinking=False,
         )
         prompt_ids = tokenizer.encode(prompt_str, add_special_tokens=False)
-        # Response gets a trailing EOS so the model learns to stop.
-        resp = row["response"] + (tokenizer.eos_token or "")
+        # Natural complete responses normally get a trailing EOS. Truncated
+        # future-lens spans can disable it: EOS at an arbitrary crop boundary
+        # would teach premature termination rather than continuation reading.
+        resp = row["response"]
+        if append_response_eos:
+            resp += tokenizer.eos_token or ""
         resp_ids = tokenizer.encode(resp, add_special_tokens=False)
         full = prompt_ids + resp_ids
         if len(full) > max_len:
@@ -584,6 +590,10 @@ def main():
     p.add_argument("--save-initial", action="store_true",
                    help="save the initialized model/adapter as iter_0000000; "
                         "with --num-steps 0 this creates an untrained AV LoRA")
+    p.add_argument("--append-response-eos", action=argparse.BooleanOptionalAction,
+                   default=True,
+                   help="append EOS to AV responses; disable for arbitrary "
+                        "future-continuation crops that do not end the source")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--wandb-project", default="nla-qwen3-8b")
     p.add_argument("--wandb-name", default=None)
@@ -919,6 +929,7 @@ def main():
                 ids, attn, loss_mask, v_batch = _av_prepare_chunk(
                     chunk_rows, tokenizer, cfg.injection_char, device,
                     max_len=args.max_len,
+                    append_response_eos=args.append_response_eos,
                 )
                 # vectors_ref stays set through .backward() below: AV mode runs
                 # gradient checkpointing BY DEFAULT, the backward-time recompute
@@ -1058,7 +1069,8 @@ def main():
             with amp():
                 h_ce, h_n = heldout_av_ce(
                     model, tokenizer, heldout_av_rows, cfg, vectors_ref, device,
-                    max_len=args.max_len)
+                    max_len=args.max_len,
+                    append_response_eos=args.append_response_eos)
             model.train()
             log["heldout_loss"] = h_ce
             log["heldout_ppl"] = math.exp(h_ce) if h_ce < 30 else float("inf")
