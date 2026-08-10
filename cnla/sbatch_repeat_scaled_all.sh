@@ -5,7 +5,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=128G
-#SBATCH --time=36:00:00
+#SBATCH --time=48:00:00
 #SBATCH --output=/workspace-vast/celeste/skip-lens-opd/logs/%x_%j.out
 set -euo pipefail
 
@@ -13,9 +13,9 @@ ROOT=${ROOT:-/workspace-vast/celeste/skip-lens-opd}
 SRC=$ROOT/src
 VENV=$ROOT/venv
 BASE=${BASE:-Qwen/Qwen3.6-27B}
-DATA=$ROOT/data/repeat_scaled_all
-CKPTS=$ROOT/checkpoints/repeat_scaled_all
-RESULTS=$ROOT/results/repeat_scaled_all
+DATA=$ROOT/data/repeat_scaled_all_50k
+CKPTS=$ROOT/checkpoints/repeat_scaled_all_50k
+RESULTS=$ROOT/results/repeat_scaled_all_50k
 JDIR=${JDIR:-/workspace-vast/celeste/multi-token-jlens-nla-lastlayer/results/jlens_official}
 
 source /workspace-vast/celeste/.keys.env
@@ -26,26 +26,19 @@ export PYTHONPATH=$SRC
 mkdir -p "$DATA" "$CKPTS" "$RESULTS" "$ROOT/logs"
 cd "$SRC"
 
-# 10,000 independent CSPRNG phrases -> 40,000 activation/target rows. This is
-# 14.3x the phrase diversity of the original 700-phrase control.
-python -m pretrain.collect_repeat_data --base-model "$BASE" \
-  --out-train "$DATA/train.parquet" --out-val "$DATA/val.parquet" \
-  --n-phrases 10000 --phrase-words 40 --positions-per-phrase 4 \
-  --max-span 16 --layers 42 62 --target-layer 62 --batch-size 16
-
-# 5,000 updates * batch 16 = 80,000 example presentations, about two passes
-# through 36,000 phrase-disjoint training rows and roughly 0.7M target tokens.
+# 15,000 updates * batch 16 = 240,000 example presentations, about 1.33 passes
+# through 180,000 phrase-disjoint training rows and roughly 2M target tokens.
 # `all` covers attention, MLP, and architecture-specific DeltaNet projections.
 python -m nla.train_sft --mode av --base-ckpt "$BASE" \
   --parquet "$DATA/train.parquet" --sidecar "$DATA/train.parquet" \
-  --heldout-parquet "$DATA/val.parquet" --heldout-rows 1000 \
-  --heldout-every 250 --save-dir "$CKPTS" \
-  --num-steps 5000 --batch-size 16 --gradient-accumulation-steps 1 \
+  --heldout-parquet "$DATA/val.parquet" --heldout-rows 2000 \
+  --heldout-every 500 --save-dir "$CKPTS" \
+  --num-steps 15000 --batch-size 16 --gradient-accumulation-steps 1 \
   --use-lora --lora-r 64 --lora-alpha 16 --lora-scope all \
-  --lr 3e-5 --min-lr 2e-6 --lr-warmup-steps 100 \
-  --save-every 250 --sample-every 0 \
+  --lr 3e-5 --min-lr 2e-6 --lr-warmup-steps 200 \
+  --save-every 500 --sample-every 0 \
   --wandb-project skip-lens-opd --wandb-group repeat-scaled-all \
-  --wandb-name repeat_10kphrases_bs16_allmodules
+  --wandb-name repeat_50kphrases_bs16_allmodules
 
 python scripts/select_best_sft_checkpoint.py \
   --metrics "$CKPTS/metrics.jsonl" --checkpoint-dir "$CKPTS" \
@@ -56,7 +49,7 @@ for feed in activation_vector act_L42; do
   if [ "$feed" = activation_vector ]; then label=L62; else label=L42; fi
   python -m evals.opd_eval --base-ckpt "$BASE" --av-ckpt "$BEST" \
     --parquet "$DATA/val.parquet" --sidecar "$DATA/val.parquet" \
-    --feed-col "$feed" --max-rows 512 --max-new-tokens 16 --batch-size 8 \
+    --feed-col "$feed" --max-rows 1024 --max-new-tokens 16 --batch-size 8 \
     --out "$RESULTS/repeat_scaled_${label}_eval.json"
 done
 
