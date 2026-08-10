@@ -860,6 +860,7 @@ def main():
     save_dir = Path(args.save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
     save_resolved_config(args, save_dir)   # snapshot merged config for reproducibility
+    metrics_path = save_dir / "metrics.jsonl"
 
     if args.save_initial:
         if args.mode != "av":
@@ -1088,6 +1089,8 @@ def main():
 
         if not args.no_wandb:
             wandb.log(log, step=step)
+        with metrics_path.open("a") as f:
+            f.write(json.dumps({k: v for k, v in log.items() if k != "samples"}) + "\n")
 
         # ---- save ----
         if (step + 1) % args.save_every == 0 or (step + 1) == args.num_steps:
