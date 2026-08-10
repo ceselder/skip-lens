@@ -17,6 +17,13 @@ def main() -> None:
     args = parser.parse_args()
 
     rows = [json.loads(line) for line in Path(args.metrics).read_text().splitlines()]
+    # A restarted run may append to an existing metrics file. Keep the final
+    # monotonic step sequence so an abandoned startup does not duplicate the
+    # beginning of the learning curve.
+    resets = [i for i in range(1, len(rows))
+              if int(rows[i]["step"]) <= int(rows[i - 1]["step"])]
+    discarded_prefix_rows = resets[-1] if resets else 0
+    rows = rows[discarded_prefix_rows:]
     steps = np.array([int(row["step"]) + 1 for row in rows])
     losses = np.array([float(row["loss"]) for row in rows])
     window = min(50, len(losses))
@@ -40,6 +47,7 @@ def main() -> None:
             for s, v in zip(val_steps, val_losses)
         ],
         "best": {"step": int(val_steps[best_idx]), "loss": float(val_losses[best_idx])},
+        "discarded_restart_prefix_rows": discarded_prefix_rows,
     }
     (out / "data" / "validation_curve.json").write_text(json.dumps(curve, indent=2))
 
