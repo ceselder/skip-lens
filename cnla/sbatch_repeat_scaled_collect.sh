@@ -13,7 +13,7 @@ ROOT=${ROOT:-/workspace-vast/celeste/skip-lens-opd}
 SRC=$ROOT/src
 VENV=$ROOT/venv
 BASE=${BASE:-Qwen/Qwen3.6-27B}
-DATA=$ROOT/data/repeat_scaled_all_50k
+DATA=$ROOT/data/repeat_scaled_all_25k
 
 source /workspace-vast/celeste/.keys.env
 source "$VENV/bin/activate"
@@ -24,16 +24,18 @@ export DATA
 mkdir -p "$DATA" "$ROOT/logs"
 cd "$SRC"
 
-# Four independent OS-CSPRNG streams, 3,125 phrases each: 12,500 phrases and
-# 50,000 activation examples total. Phrase hashes define each shard's
+# Four independent OS-CSPRNG streams: 6,250 phrases and exactly 25,000
+# activation examples total. Phrase hashes define each shard's
 # train/validation split; the merged split is checked before training.
+phrase_counts=(1563 1563 1562 1562)
 for shard in 0 1 2 3; do
   srun --exclusive --nodes=1 --ntasks=1 --gres=gpu:1 \
     --cpus-per-task=8 --mem=120G \
     python -m pretrain.collect_repeat_data --base-model "$BASE" \
       --out-train "$DATA/shard_${shard}_train.parquet" \
       --out-val "$DATA/shard_${shard}_val.parquet" \
-      --n-phrases 3125 --phrase-words 40 --positions-per-phrase 4 \
+      --n-phrases "${phrase_counts[$shard]}" \
+      --phrase-words 40 --positions-per-phrase 4 \
       --max-span 16 --layers 42 62 --target-layer 62 --batch-size 16 &
 done
 wait
@@ -48,7 +50,7 @@ import os
 import pyarrow.parquet as pq
 
 root = os.environ.get(
-    "DATA", "/workspace-vast/celeste/skip-lens-opd/data/repeat_scaled_all_50k"
+    "DATA", "/workspace-vast/celeste/skip-lens-opd/data/repeat_scaled_all_25k"
 )
 train = set(pq.read_table(root + "/train.parquet", columns=["doc_id"])["doc_id"].to_pylist())
 val = set(pq.read_table(root + "/val.parquet", columns=["doc_id"])["doc_id"].to_pylist())

@@ -13,9 +13,9 @@ ROOT=${ROOT:-/workspace-vast/celeste/skip-lens-opd}
 SRC=$ROOT/src
 VENV=$ROOT/venv
 BASE=${BASE:-Qwen/Qwen3.6-27B}
-DATA=$ROOT/data/repeat_scaled_all_50k
-CKPTS=$ROOT/checkpoints/repeat_scaled_all_50k
-RESULTS=$ROOT/results/repeat_scaled_all_50k
+DATA=$ROOT/data/repeat_scaled_all_25k
+CKPTS=$ROOT/checkpoints/repeat_scaled_all_25k
+RESULTS=$ROOT/results/repeat_scaled_all_25k
 JDIR=${JDIR:-/workspace-vast/celeste/multi-token-jlens-nla-lastlayer/results/jlens_official}
 
 source /workspace-vast/celeste/.keys.env
@@ -26,19 +26,19 @@ export PYTHONPATH=$SRC
 mkdir -p "$DATA" "$CKPTS" "$RESULTS" "$ROOT/logs"
 cd "$SRC"
 
-# 3,125 updates * batch 16 = exactly 50,000 example presentations, about 1.11
-# passes through 45,000 phrase-disjoint training rows and roughly 0.4M tokens.
+# 1,563 updates * batch 16 = 25,008 example presentations, about 1.11 passes
+# through 22,500 phrase-disjoint training rows and roughly 0.2M tokens.
 # `all` covers attention, MLP, and architecture-specific DeltaNet projections.
 python -m nla.train_sft --mode av --base-ckpt "$BASE" \
   --parquet "$DATA/train.parquet" --sidecar "$DATA/train.parquet" \
-  --heldout-parquet "$DATA/val.parquet" --heldout-rows 2000 \
+  --heldout-parquet "$DATA/val.parquet" --heldout-rows 1000 \
   --heldout-every 250 --save-dir "$CKPTS" \
-  --num-steps 3125 --batch-size 16 --gradient-accumulation-steps 1 \
+  --num-steps 1563 --batch-size 16 --gradient-accumulation-steps 1 \
   --use-lora --lora-r 64 --lora-alpha 16 --lora-scope all \
   --lr 3e-5 --min-lr 2e-6 --lr-warmup-steps 100 \
   --save-every 250 --sample-every 0 \
   --wandb-project skip-lens-opd --wandb-group repeat-scaled-all \
-  --wandb-name repeat_50kexamples_bs16_allmodules
+  --wandb-name repeat_25kactivations_bs16_allmodules
 
 python scripts/select_best_sft_checkpoint.py \
   --metrics "$CKPTS/metrics.jsonl" --checkpoint-dir "$CKPTS" \
