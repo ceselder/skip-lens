@@ -111,6 +111,15 @@ def main() -> None:
             "base_model": args.base_model, "d_model": meta["d_model"],
             "layer_index": meta["layer"], "norm": "none",
         },
+        "generation": {
+            "corpus": meta.get("corpus"),
+            "corpus_config": meta.get("corpus_config"),
+            "temperature": meta.get("rollout_temperature"),
+            "top_p": meta.get("rollout_top_p"),
+            "rollout_len": meta.get("rollout_len"),
+            "decision_points": meta.get("decision_points"),
+            "rollout_index": args.rollout_idx,
+        },
         "tokens": {
             "injection_char": meta["inj_char"],
             "injection_token_id": meta["inj_id"],

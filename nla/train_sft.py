@@ -581,6 +581,9 @@ def main():
     p.add_argument("--max-rows", type=int, default=None,
                    help="Cap training rows (smoke runs)")
     p.add_argument("--save-every", type=int, default=500)
+    p.add_argument("--save-initial", action="store_true",
+                   help="save the initialized model/adapter as iter_0000000; "
+                        "with --num-steps 0 this creates an untrained AV LoRA")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--wandb-project", default="nla-qwen3-8b")
     p.add_argument("--wandb-name", default=None)
@@ -857,6 +860,26 @@ def main():
     save_dir = Path(args.save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
     save_resolved_config(args, save_dir)   # snapshot merged config for reproducibility
+
+    if args.save_initial:
+        if args.mode != "av":
+            raise ValueError("--save-initial currently supports AV mode only")
+        out_dir = save_dir / "iter_0000000"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        print(f"[save] initialized adapter → {out_dir}", flush=True)
+        model.save_pretrained(str(out_dir))
+        tokenizer.save_pretrained(str(out_dir))
+        import shutil
+        sidecar_src = Path(args.sidecar)
+        if sidecar_src.is_file() and sidecar_src.suffix == ".parquet":
+            sidecar_yaml = sidecar_src.with_suffix(".parquet.nla_meta.yaml")
+            if sidecar_yaml.exists():
+                shutil.copy2(sidecar_yaml, out_dir / "nla_meta.yaml")
+        if args.num_steps == 0:
+            print("done: initialized adapter only.", flush=True)
+            if not args.no_wandb:
+                wandb.finish()
+            return
 
     # ---- debug sampling: fixed example set + accumulating table ----
     sample_rows = rows[: args.n_samples] if args.sample_every > 0 else []

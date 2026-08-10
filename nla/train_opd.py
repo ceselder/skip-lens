@@ -97,6 +97,19 @@ def _predictive_logits(logits: torch.Tensor, prefix_lens: torch.Tensor, width: i
     return logits[rows, positions]
 
 
+def _clip_valid_to_budget(valid: torch.Tensor, remaining: int) -> torch.Tensor:
+    """Mask loss positions after an exact remaining-token budget is exhausted."""
+    if remaining < 0:
+        raise ValueError("remaining token budget must be non-negative")
+    if int(valid.sum()) <= remaining:
+        return valid
+    clipped = valid.clone()
+    flat = clipped.view(-1)
+    indices = flat.nonzero(as_tuple=False).squeeze(-1)
+    flat[indices[remaining:]] = False
+    return clipped
+
+
 def _student_prompt_ids(rows, tokenizer, injection_char):
     texts = [build_prompt_text(r["prompt"], injection_char, tokenizer) for r in rows]
     ids = [tokenizer.encode(x, add_special_tokens=False) for x in texts]
@@ -273,6 +286,16 @@ def main() -> None:
         valid = torch.zeros((len(batch), width), dtype=torch.bool, device=device)
         for i, response in enumerate(responses):
             valid[i, : len(response)] = True
+        # Honor token budgets exactly.  OPD response lengths vary because EOS
+        # terminates a rollout, so merely stopping after a batch can otherwise
+        # give OPD and SFT different loss-bearing token counts.  Keep the first
+        # `remaining` valid positions in stable row-major order in the final
+        # batch; sampled-but-masked suffix tokens remain context only.
+        if args.max_optimized_tokens > 0:
+            remaining = args.max_optimized_tokens - optimized_total
+            if remaining <= 0:
+                break
+            valid = _clip_valid_to_budget(valid, remaining)
 
         student_seqs = [prompt + response for response in responses]
         sids, sattn, splens = _right_pad(student_seqs, tokenizer.pad_token_id, device)
@@ -363,6 +386,7 @@ def main() -> None:
                 targets = torch.full((len(batch), width), -100, dtype=torch.long, device=device)
                 for i, response in enumerate(responses):
                     targets[i, : len(response)] = torch.tensor(response, device=device)
+                targets[~valid] = -100
                 loss = F.cross_entropy(
                     student_pred.float().reshape(-1, student_pred.shape[-1]),
                     targets.reshape(-1), ignore_index=-100,

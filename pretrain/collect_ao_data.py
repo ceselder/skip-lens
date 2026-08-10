@@ -61,6 +61,11 @@ def main():
     ap.add_argument("--positions-per-doc", type=int, default=5)
     ap.add_argument("--rollouts", type=int, default=16)   # "a ton" — dense sample of what comes next
     ap.add_argument("--rollout-len", type=int, default=8)  # SHORT — the concept within the next 4-8 tokens
+    ap.add_argument("--temperature", type=float, default=1.0,
+                    help="sampling temperature for model-generated SFT continuations")
+    ap.add_argument("--top-p", type=float, default=0.95,
+                    help="nucleus cutoff for model-generated SFT continuations; "
+                         "use 1.0 for an untruncated T=1 policy sample")
     ap.add_argument("--topk", type=int, default=15)
     ap.add_argument("--min-ctx", type=int, default=16)
     ap.add_argument("--max-length", type=int, default=384)
@@ -154,7 +159,13 @@ def main():
         os.replace(tmp, args.out)
         Path(args.out + ".meta.json").write_text(json.dumps(
             {"inj_char": inj_char, "inj_id": inj_id, "left": left, "right": right,
-             "d_model": d_model, "layer": LAYERS[0], "layers": LAYERS, "rows": table.num_rows}))
+             "d_model": d_model, "layer": LAYERS[0], "layers": LAYERS,
+             "rows": table.num_rows, "corpus": args.corpus,
+             "corpus_config": args.corpus_config,
+             "rollout_temperature": args.temperature,
+             "rollout_top_p": args.top_p,
+             "rollout_len": args.rollout_len,
+             "decision_points": args.decision_points}))
         return table.num_rows
     for di, text in enumerate(texts):
         ids = tok(text, return_tensors="pt", truncation=True, max_length=args.max_length).input_ids.to(dev)
@@ -238,7 +249,8 @@ def main():
         with torch.no_grad():
             g = model.generate(input_ids=torch.stack(bids), attention_mask=torch.stack(bmask),
                                min_new_tokens=args.rollout_len, max_new_tokens=args.rollout_len,
-                               do_sample=True, temperature=1.0, top_p=0.95,
+                               do_sample=True, temperature=args.temperature, top_p=args.top_p,
+                               top_k=0, repetition_penalty=1.0,
                                pad_token_id=tok.eos_token_id)
         newt = g[:, GEN_PAD:]
         token_ids_by_pos = {}

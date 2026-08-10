@@ -1,5 +1,6 @@
 import torch
 
+from nla.train_opd import _clip_valid_to_budget
 from nla.opd import (
     first_kl_cutoff_masks,
     forward_kl_cutoff_loss,
@@ -7,6 +8,17 @@ from nla.opd import (
     student_teacher_kl,
     teacher_student_kl,
 )
+
+
+def test_exact_token_budget_clips_only_final_valid_positions():
+    valid = torch.tensor([[1, 1, 0, 1], [1, 0, 1, 1]], dtype=torch.bool)
+    clipped = _clip_valid_to_budget(valid, remaining=4)
+    assert clipped.tolist() == [
+        [True, True, False, True],
+        [True, False, False, False],
+    ]
+    assert int(clipped.sum()) == 4
+    assert torch.equal(_clip_valid_to_budget(valid, 99), valid)
 
 
 def test_teacher_student_kl_is_zero_for_identical_logits():
