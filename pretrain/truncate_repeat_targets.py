@@ -31,28 +31,45 @@ def main() -> None:
     rows_written = 0
     try:
         for rg_idx in range(pf.num_row_groups):
-            rows = pf.read_row_group(rg_idx).to_pylist()
-            for row in rows:
-                target = list(map(int, row["target_ids"][:args.tokens]))
+            table = pf.read_row_group(rg_idx)
+            targets = [list(map(int, x[:args.tokens]))
+                       for x in table["target_ids"].to_pylist()]
+            continuations = [list(map(int, x[:args.tokens]))
+                             for x in table["continuation_ids"].to_pylist()]
+            responses = []
+            for row_idx, target in enumerate(targets):
                 if len(target) != args.tokens:
                     raise ValueError(
-                        f"row {rows_written} has only {len(target)} target tokens"
+                        f"row {rows_written + row_idx} has only {len(target)} target tokens"
                     )
-                row["target_ids"] = target
-                if "continuation_ids" in row:
-                    row["continuation_ids"] = list(
-                        map(int, row["continuation_ids"][:args.tokens])
+                if len(continuations[row_idx]) != args.tokens:
+                    raise ValueError(
+                        f"row {rows_written + row_idx} has a short continuation"
                     )
-                row["response"] = tok.decode(target, skip_special_tokens=False)
-                if tok.encode(row["response"], add_special_tokens=False) != target:
-                    raise ValueError(f"target decode/encode mismatch at row {rows_written}")
-                if "span_tokens" in row:
-                    row["span_tokens"] = args.tokens
-            table = pa.Table.from_pylist(rows, schema=pf.schema_arrow)
+                response = tok.decode(target, skip_special_tokens=False)
+                if tok.encode(response, add_special_tokens=False) != target:
+                    raise ValueError(
+                        f"target decode/encode mismatch at row {rows_written + row_idx}"
+                    )
+                responses.append(response)
+            replacements = {
+                "target_ids": pa.array(
+                    targets, type=pf.schema_arrow.field("target_ids").type),
+                "continuation_ids": pa.array(
+                    continuations, type=pf.schema_arrow.field("continuation_ids").type),
+                "response": pa.array(
+                    responses, type=pf.schema_arrow.field("response").type),
+                "span_tokens": pa.array(
+                    [args.tokens] * table.num_rows,
+                    type=pf.schema_arrow.field("span_tokens").type),
+            }
+            for name, values in replacements.items():
+                idx = table.schema.get_field_index(name)
+                table = table.set_column(idx, name, values)
             if writer is None:
                 writer = pq.ParquetWriter(out, table.schema)
             writer.write_table(table)
-            rows_written += len(rows)
+            rows_written += table.num_rows
     finally:
         if writer is not None:
             writer.close()
