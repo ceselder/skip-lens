@@ -14,6 +14,8 @@ METRICS = {
     "reference_mean_reverse_kl": False,
     "reference_top1_agreement": True,
     "exact_prefix_tokens": True,
+    "length": True,
+    "ended_eos": False,
 }
 
 
