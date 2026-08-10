@@ -13,7 +13,7 @@ EMPTY_JDIR=$RUN_ROOT/empty_jlens
 source /workspace/.keys.env
 source "$VENV/bin/activate"
 export HF_HOME=/workspace/.hf_home
-export HF_HUB_ENABLE_HF_TRANSFER=1
+export HF_XET_HIGH_PERFORMANCE=1
 export PYTHONPATH=$SRC
 export REPEAT_DATA=$DATA
 mkdir -p "$DATA" "$CKPTS" "$RESULTS" "$EMPTY_JDIR" "$RUN_ROOT/logs"
