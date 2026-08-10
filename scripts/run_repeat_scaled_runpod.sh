@@ -27,7 +27,7 @@ for shard in 0 1 2 3; do
     --out-train "$DATA/shard_${shard}_train.parquet" \
     --out-val "$DATA/shard_${shard}_val.parquet" \
     --n-phrases "${phrase_counts[$shard]}" \
-    --phrase-words 40 --positions-per-phrase 4 --max-span 16 \
+    --phrase-words 40 --positions-per-phrase 4 --max-span 8 --fixed-span 8 \
     --layers 42 62 --target-layer 62 --batch-size 16 \
     >"$RUN_ROOT/logs/repeat_collect_shard_${shard}.log" 2>&1 &
   pids+=("$!")

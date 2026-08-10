@@ -50,6 +50,8 @@ def main() -> None:
     ap.add_argument("--phrase-words", type=int, default=40)
     ap.add_argument("--positions-per-phrase", type=int, default=4)
     ap.add_argument("--max-span", type=int, default=16)
+    ap.add_argument("--fixed-span", type=int, default=0,
+                    help="if positive, every target has exactly this many tokens")
     ap.add_argument("--layers", type=int, nargs="+", default=[42, 62])
     ap.add_argument("--target-layer", type=int, default=62)
     ap.add_argument("--batch-size", type=int, default=8)
@@ -58,6 +60,8 @@ def main() -> None:
     args = ap.parse_args()
     if args.target_layer not in args.layers:
         raise ValueError("--target-layer must be included in --layers")
+    if args.fixed_span < 0 or args.fixed_span > args.phrase_words - 1:
+        raise ValueError("--fixed-span must be 0 or less than --phrase-words")
 
     device = "cuda"
     rng = secrets.SystemRandom()
@@ -144,10 +148,19 @@ def main() -> None:
         model(input_ids=enc.input_ids, attention_mask=enc.attention_mask, use_cache=False)
         for i, (phrase, prompt_ids, output_ids) in enumerate(chunk):
             phrase_id = hashlib.sha256(phrase.encode()).hexdigest()[:20]
-            max_anchor = len(output_ids) - 1
-            anchors = sorted(rng.sample(range(1, max_anchor), args.positions_per_phrase))
+            if args.fixed_span:
+                max_anchor = len(output_ids) - args.fixed_span
+                valid_anchors = range(1, max_anchor + 1)
+            else:
+                max_anchor = len(output_ids) - 1
+                valid_anchors = range(1, max_anchor)
+            if len(valid_anchors) < args.positions_per_phrase:
+                raise ValueError("not enough valid anchors for --positions-per-phrase")
+            anchors = sorted(rng.sample(valid_anchors, args.positions_per_phrase))
             for anchor in anchors:
-                horizon = rng.randint(1, min(args.max_span, len(output_ids) - anchor))
+                horizon = args.fixed_span or rng.randint(
+                    1, min(args.max_span, len(output_ids) - anchor)
+                )
                 absolute_pos = len(prompt_ids) + anchor - 1
                 row = {
                     "prompt": canonical_actor_prompt(),
@@ -235,7 +248,7 @@ def main() -> None:
     manifest = {
         "accepted_phrases": len(accepted), "attempted_phrases": attempts,
         "train_rows": train.num_rows, "val_rows": val.num_rows,
-        "max_span": args.max_span,
+        "max_span": args.max_span, "fixed_span": args.fixed_span or None,
         "phrase_set_sha256": hashlib.sha256(
             "\n".join(sorted(x[0] for x in accepted)).encode()).hexdigest(),
     }
