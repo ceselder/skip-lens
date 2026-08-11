@@ -1,0 +1,152 @@
+=== matrix stats ===
+L42: J_norm_over_sqrtd=0.7747  J_finite=True  R_norm_over_sqrtd=0.7167  R_finite=True  Joff_norm_over_sqrtd=0.7849  Joff_finite=True  cos_R_J=0.9197  cos_J_Joff=0.8852  cos_R_Joff=0.8533
+L55: J_norm_over_sqrtd=1.1264  J_finite=True  R_norm_over_sqrtd=1.0912  R_finite=True  Joff_norm_over_sqrtd=1.1433  Joff_finite=True  cos_R_J=0.9878  cos_J_Joff=0.9777  cos_R_Joff=0.9695
+[transformers] The fast path is not available because one of the required library is not installed. Falling back to torch implementation. To install follow https://github.com/fla-org/flash-linear-attention#installation and https://github.com/Dao-AILab/causal-conv1d
+Loading weights:   0%|          | 0/851 [00:00<?, ?it/s]Loading weights:  40%|███▉      | 337/851 [00:00<00:00, 3365.65it/s]Loading weights:  79%|███████▉  | 674/851 [00:00<00:00, 2982.56it/s]Loading weights: 100%|██████████| 851/851 [00:00<00:00, 2957.78it/s]
+
+=== prompt 0: ...'s, and presents the scientific background necessary for understanding each law.\n'
+
+-- pos 24 | ctx: ...' our environment. This basic introduction to environmental law explains the legal'
+   model final top-3 :  framework |  principles |  system   (actual next: ' system')
+   L42 logit-lens    :  framework | s | en | 和法律 |   | 渊源 | l |  status
+   L42 J   -lens     :  legal |  laws | legal |  law | 和法律 | /legal |  Legal | Legal
+   L42 R   -lens     :  legal |  law |  and |  laws |  systems | , |  system |  rules
+   L42 Joff-lens     :  legal |  laws |  law | /legal | 和法律 | legal |  Legal |  legally
+   L55 logit-lens    :  framework |  basis |  concepts | 框架 |  foundations |  frameworks |  principles |  foundation
+   L55 J   -lens     :  framework |  frameworks |  concepts |  foundations |  mechanisms |  basis |  principles | 框架
+   L55 R   -lens     :  framework |  concepts |  frameworks |  principles |  systems |  basis |  mechanisms |  system
+   L55 Joff-lens     :  framework |  concepts |  basis |  principles |  frameworks |  rules |  foundations |  basics
+
+-- pos 47 | ctx: ...' and presents the scientific background necessary for understanding each law.\n'
+   model final top-3 : The | This | Read   (actual next: None)
+   L42 logit-lens    :   | br | ... |  topics | by | 内容包括 | ; |  br
+   L42 J   -lens     :  chapters |  topics |  Topics |  Chapters | 这本书 | 本书 | 教材 |  textbooks
+   L42 R   -lens     :   | , |  and | ... |  " | \n | . |  ...
+   L42 Joff-lens     :  chapters |  topics | book |  chapter |  book |  Topics |  readers |  Chapters
+   L55 logit-lens    : 基本信息 | Coverage | Key |  " | 裘 |  Features |  features | more
+   L55 J   -lens     : Key |  Features | 基本信息 | 内容包括 | 本书 |  features |  Topics |  Coverage
+   L55 R   -lens     :  " |  features | -- | Key |  more | - | ... |  topics
+   L55 Joff-lens     : Key |  Features | 基本信息 |  features | 本书 | 内容包括 |  Coverage | Coverage
+
+=== prompt 1: ...'ere originally published in an e-magazine, and have been substantially edited by'
+
+-- pos 24 | ctx: ...' and describe the technology that will provide the solutions to enhance transportation'
+   model final top-3 :  safety | . |  systems   (actual next: ' and')
+   L42 logit-lens    : . |  systems |  infrastructure | -related |  and |  communication | - |  safety
+   L42 J   -lens     :  transportation |  infrastructure |  traffic |  vehicles |  Transportation |  roadway |  systems |  roads
+   L42 R   -lens     :  and |  systems |  system |  infrastructure | , |  transportation |  technology |  safety
+   L42 Joff-lens     :  transportation |  vehicles |  infrastructure |  vehicle |  traffic |  highways |  Transportation |  roads
+   L55 logit-lens    :  safety |  systems |  efficiency |  infrastructure |  worldwide |  tomorrow | 的安全性 |  Safety
+   L55 J   -lens     :  safety |  systems |  infrastructure |  efficiency |  connectivity |  Safety |  security |  networks
+   L55 R   -lens     :  safety |  systems |  infrastructure |  efficiency |  system |  security |  worldwide |  and
+   L55 Joff-lens     :  safety |  infrastructure |  systems |  efficiency |  connectivity |  Safety |  worldwide |  security
+
+-- pos 47 | ctx: ...' an e-magazine, and have been substantially edited by'
+   model final top-3 :  the |  IEEE |  S   (actual next: None)
+   L42 logit-lens    : O |  editorial |  | |   | * | - |  staff | .
+   L42 J   -lens     :  editors |  editorial |  editor |  Editor |  Editors |  editing | editor |  publishers
+   L42 R   -lens     :  and | , |  “ |  the | . |  to |   |  (
+   L42 Joff-lens     :  editorial |  editor |  editors |  Editor |  Editorial |  publication |  publisher | -editor
+   L55 logit-lens    :  engineering |  Engineering |  IEEE |  our | cio |  automotive |  engineers |  Design
+   L55 J   -lens     :  editors |  IEEE |  engineers |  Engineering |  editor |  engineering |  editorial |  authors
+   L55 R   -lens     :  engineering |  Engineering |  the |  IEEE |  author |  editors |  editor |  engineers
+   L55 Joff-lens     :  editor |  editors |  IEEE |  Engineering |  engineering |  editorial | -editor |  engineers
+
+=== prompt 2: ...'tion of the unique approach to homeless health care that has evolved, including:'
+
+-- pos 24 | ctx: ...' homeless people with dual diagnoses. The paper concludes with comments on'
+   model final top-3 :  the |  how |  future   (actual next: ' how')
+   L42 logit-lens    :  the | ... |   |  how | -- | the | - | :
+   L42 J   -lens     :  policy |  policies |  issues |  future |  challenges |  strategies |  funding |  implementation
+   L42 R   -lens     :  and | , |  the |  in |   |  ( |  policy |  future
+   L42 Joff-lens     :  policy |  problems |  policies |  funding |  future |  efforts |  research |  national
+   L55 logit-lens    :  future | future |  lessons |  how | 未来 |  Future |  what |  the
+   L55 J   -lens     :  future |  challenges | future |  Future |  issues |  lessons |  implications | 未来
+   L55 R   -lens     :  future |  how |  challenges |  issues |  lessons |  current |  Future |  the
+   L55 Joff-lens     :  future |  challenges |  Future | future |  lessons |  issues |  implications |  potential
+
+-- pos 47 | ctx: ...' unique approach to homeless health care that has evolved, including:'
+   model final top-3 :  ( |  the |     (actual next: None)
+   L42 logit-lens    : 一是 | • | -- |  • | � | _ | 一是要 | -
+   L42 J   -lens     :  challenges |  issues |  threats | : |  policies |  problems |  policy |  funding
+   L42 R   -lens     : , |  and |  ( | : |  the |  to |   | .
+   L42 Joff-lens     :  challenges |  funding |  problems |  efforts |  increasing |  threats |  critical |  concerns
+   L55 logit-lens    :  lack |  continued |  increasing |  funding | • | 缺乏 |  maintaining |  continuing
+   L55 J   -lens     :  lack |  funding |  continued |  increasing |  changes |  staffing |  maintaining |  increased
+   L55 R   -lens     :  lack |  ( |  continued |  funding |  increasing |  changes |  continuing |  increased
+   L55 Joff-lens     :  lack |  increasing |  funding |  maintaining |  continuing |  continued |  changes |  staffing
+
+=== prompt 3: ...'aired as a result of local or regional agricultural production practices; or\nthe'
+
+-- pos 24 | ctx: ...' for agricultural producers in specific localities or crop producing regions where'
+   model final top-3 :  such |  the |  there   (actual next: ' the')
+   L42 logit-lens    : - | ... | / | \n | : | . | , | …
+   L42 J   -lens     :  pesticide |  pesticides |  pest |  pests |  threatened |  localized |  areas |  threats
+   L42 R   -lens     :  and | , |  or |  areas |  the |  ( | . |  local
+   L42 Joff-lens     :  threatened |  areas |  local |  threat |  pesticide |  regional |  pesticides |  pest
+   L55 logit-lens    :  such |  appropriate | such |  there |  Such | Such |  applicable | 这样的
+   L55 J   -lens     :  pests |  pest |  appropriate |  such |  pesticide |  pesticides |  significant |  diseases
+   L55 R   -lens     :  such |  appropriate |  significant |  major |  problems |  there |  pests |  pest
+   L55 Joff-lens     :  such |  appropriate |  pests |  pest |  significant |  damage |  problems |  pesticide
+
+-- pos 47 | ctx: ...' result of local or regional agricultural production practices; or\nthe'
+   model final top-3 :  use |  implementation |  development   (actual next: None)
+   L42 logit-lens    : … |  … |  threat |  . | - | 推广 |   |  need
+   L42 J   -lens     :  prevention |  environmental |  potential |  threatened |  local |  preventative |  regional |  regions
+   L42 R   -lens     :  environmental |  or |  in |  local | , |  potential |  areas |  to
+   L42 Joff-lens     :  potential |  threatened |  environmental |  regional |  region |  threat |  local |  areas
+   L55 logit-lens    :  use |  implementation | 实施 |  adoption |  local |  implements |  implementing | 推广
+   L55 J   -lens     :  implementation |  adoption |  use | 实施 |  implements |  local |  implementing |  implemented
+   L55 R   -lens     :  use |  implementation |  local |  adoption |  implemented |  application | 实施 |  implementing
+   L55 Joff-lens     :  implementation |  use |  adoption | 实施 |  implemented |  implementing |  implements |  local
+
+=== prompt 4: ...'e world. Every year, millions of tourists visit the tower to enjoy the view from'
+
+-- pos 31 | ctx: ...' tower was built in 1889 for the World'
+   model final top-3 : 's |  Fair | ’s   (actual next: "'s")
+   L42 logit-lens    : 等重要 |  World |  ' |  U | 皆 |   |  ... | asan
+   L42 J   -lens     :  Expo |  World | /global | 世博会 | World |  expo |  exhibitions | /world
+   L42 R   -lens     :  World |  world |  international |  Paris |  global |  Expo |  International |  worldwide
+   L42 Joff-lens     :  Expo |  expo | 世博会 | 万国 | /global |  World |  Eiff |  Exhibition
+   L55 logit-lens    : 博览会 |  Expo | 万国 | Wide | 末日 | wide | liness | 各国的
+   L55 J   -lens     :  Expo | 博览会 |  Exposition |  Exhibition |  Championships | 博览 |  Expos | 万国
+   L55 R   -lens     :  Expo | 博览会 |  Paris |  Exhibition |  Exposition |  exhibition |  exposition | wide
+   L55 Joff-lens     :  Expo | 博览会 |  Exhibition |  Exposition |  expo | 博览 |  Championships |  Expos
+
+-- pos 61 | ctx: ...', millions of tourists visit the tower to enjoy the view from'
+   model final top-3 :  the |  its |  atop   (actual next: None)
+   L42 logit-lens    : 高处 |  top | 顶端 | 顶 | 顶部 |  its | 登顶 | 观景
+   L42 J   -lens     : 登高 | 高空 |  heights |  atop | 登顶 |  towers | 高处 |  climbed
+   L42 R   -lens     :  height |  top |  heights |  tower |  the | , |  high |  altitude
+   L42 Joff-lens     : 登高 |  heights | 登顶 | 观景 | 高空 |  climb | 居高 |  climbed
+   L55 logit-lens    : 顶部 |  top | 顶端 | 顶层 |  atop |  its | 顶 | top
+   L55 J   -lens     :  atop | 顶部 |  top | 顶端 | 顶层 | top | -top | 顶
+   L55 R   -lens     :  top |  atop | 顶部 | 顶端 |  its | 顶层 | top |  tops
+   L55 Joff-lens     : 顶部 |  atop |  top | 顶端 | 顶层 | top | -top |  its
+
+=== prompt 5: ...'  # print the first ten Fibonacci numbers\n    for i in range(10):\n        print('
+
+-- pos 29 | ctx: ...' return fibonacci(n - 1) + fibonacci(n - '
+   model final top-3 : 2 | 1 | 3   (actual next: '2')
+   L42 logit-lens    :  caching | 缓存 |  cache | _cache | cache | .cache |  memo |  Memo
+   L42 J   -lens     :  caching |  cache |  cached | 缓存 | cache |  caches | _cache | Cache
+   L42 R   -lens     :  cache |  caching |  cached | _cache | 缓存 |  memory | cache |  caches
+   L42 Joff-lens     :  caching |  cache |  cached |  caches | 缓存 | .cache | cache | Cache
+   L55 logit-lens    :  memo |  cache | .memo | 缓存 | memo | _cache |  Memo |  Cache
+   L55 J   -lens     :  memo |  cache | 记忆 |  cached | 缓存 | cache | .memo | _cache
+   L55 R   -lens     :  cache |  memo | _cache |  memory | 缓存 |  caching | cache |  Cache
+   L55 Joff-lens     :  memo |  cache | 记忆 | cache | .memo | 缓存 |  cached | memo
+
+-- pos 58 | ctx: ...' for i in range(10):\n        print('
+   model final top-3 : \n |  fibonacci |  "   (actual next: None)
+   L42 logit-lens    :   |  " | \n |  * | \n\n |  $ |  ( |  -
+   L42 J   -lens     :  Fibonacci |  numbers | 数列 |   |  output | 输出 | 号 |  arithmetic
+   L42 R   -lens     :   |  " | , | \n |  ( | . |  and |  a
+   L42 Joff-lens     :  " |  Fibonacci |  “ |  number |  numbers | 号 | 数列 |  
+   L55 logit-lens    :  i | \n |  f |  fibonacci | …, |  str | 	f |  Fibonacci
+   L55 J   -lens     :  fibonacci |  Fibonacci |  fib | 斐 | 纤维 | fib |  `${ |  "
+   L55 R   -lens     :  f | \n |  " |  i |  fib |  Fibonacci |  fibonacci | (f
+   L55 Joff-lens     :  fibonacci |  Fibonacci |  fib |  `${ | 纤维 |  " |  "#{ | ("
+
+saved /workspace/cnla/results/rlens_spike/readouts.json
+=== RLENS READOUT DONE ===

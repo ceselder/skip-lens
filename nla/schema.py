@@ -237,12 +237,20 @@ def compute_canonical_neighbors(
     # plain list[int]. Normalise so `enumerate` walks token ids, not dict keys.
     ids = enc["input_ids"] if hasattr(enc, "keys") else enc
     matches = [i for i, tid in enumerate(ids) if tid == injection_token_id]
-    assert len(matches) == 1, (
-        f"injection token id {injection_token_id} ({injection_char!r}) appears "
-        f"{len(matches)}× in canonical actor prompt (expected 1). Template: {content!r}"
+    assert matches, (
+        f"injection token id {injection_token_id} ({injection_char!r}) does not "
+        f"appear in canonical actor prompt. Template: {content!r}"
     )
-    p = matches[0]
-    assert 0 < p < len(ids) - 1, (
-        f"injection token at position {p} is at edge of sequence (len={len(ids)})"
+    # Multi-slot templates repeat the marker K times; the markers must form ONE
+    # contiguous run, and the canonical neighbors are the run's flanks (for a
+    # single marker this reduces to the original inj_pos ± 1 definition).
+    assert matches[-1] - matches[0] == len(matches) - 1, (
+        f"injection token id {injection_token_id} ({injection_char!r}) appears at "
+        f"non-contiguous positions {matches} in canonical actor prompt. "
+        f"Template: {content!r}"
     )
-    return ids[p - 1], ids[p + 1]
+    assert 0 < matches[0] and matches[-1] < len(ids) - 1, (
+        f"injection run at positions {matches[0]}..{matches[-1]} touches the "
+        f"edge of the sequence (len={len(ids)})"
+    )
+    return ids[matches[0] - 1], ids[matches[-1] + 1]

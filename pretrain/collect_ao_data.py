@@ -65,6 +65,10 @@ def main():
     ap.add_argument("--positions-per-doc", type=int, default=5)
     ap.add_argument("--rollouts", type=int, default=16)   # "a ton" — dense sample of what comes next
     ap.add_argument("--rollout-len", type=int, default=8)  # SHORT — the concept within the next 4-8 tokens
+    ap.add_argument("--no-rollouts", action="store_true",
+                    help="skip model.generate entirely; store only REAL continuation_ids "
+                         "(sliced from the doc) + activations. Forward-only => ~10-20x faster; "
+                         "use when training targets are real spans, not sampled rollouts.")
     ap.add_argument("--topk", type=int, default=15)
     ap.add_argument("--min-ctx", type=int, default=16)
     ap.add_argument("--max-length", type=int, default=384)
@@ -239,34 +243,39 @@ def main():
         else:
             sel = (torch.randperm(len(cand))[:n]).tolist()
             pos = [cand[i] for i in sel]
-        # BATCHED generation: ALL positions x rollouts of this doc in ONE constant-shape generate
-        # (every prefix LEFT-padded to GEN_PAD) so the fla/DeltaNet generate kernel compiles ONCE
-        # globally instead of recompiling per prefix length (per-position loop was ~26h/shard).
-        GEN_PAD = args.max_length
-        PAD_ID = tok.pad_token_id if tok.pad_token_id is not None else tok.eos_token_id
-        bids, bmask, border = [], [], []
+        # BATCHED generation of sampled rollouts. Real spans live in continuation_ids
+        # (a free slice of the doc, below), so --no-rollouts skips this whole block
+        # => forward-only collection, ~10-20x faster.
+        token_ids_by_pos = {p: [] for p in pos}
+        if not args.no_rollouts:
+            # ALL positions x rollouts of this doc in ONE constant-shape generate
+            # (every prefix LEFT-padded to GEN_PAD) so the fla/DeltaNet generate kernel compiles
+            # ONCE globally instead of recompiling per prefix length (per-position loop was ~26h/shard).
+            GEN_PAD = args.max_length
+            PAD_ID = tok.pad_token_id if tok.pad_token_id is not None else tok.eos_token_id
+            bids, bmask, border = [], [], []
+            for p in pos:
+                pref = ids[0, : p + 1]
+                if pref.shape[0] > GEN_PAD:
+                    pref = pref[-GEN_PAD:]
+                padlen = GEN_PAD - pref.shape[0]
+                pad = torch.full((padlen,), PAD_ID, dtype=ids.dtype, device=dev)
+                m = torch.cat([torch.zeros(padlen, dtype=torch.long, device=dev),
+                               torch.ones(pref.shape[0], dtype=torch.long, device=dev)])
+                for _ in range(args.rollouts):
+                    bids.append(torch.cat([pad, pref])); bmask.append(m); border.append(p)
+            with torch.no_grad():
+                g = model.generate(input_ids=torch.stack(bids), attention_mask=torch.stack(bmask),
+                                   min_new_tokens=args.rollout_len, max_new_tokens=args.rollout_len,
+                                   do_sample=True, temperature=1.0, top_p=0.95,
+                                   pad_token_id=tok.eos_token_id)
+            newt = g[:, GEN_PAD:]
+            token_ids_by_pos = {}
+            for k, p in enumerate(border):
+                token_ids_by_pos.setdefault(p, []).append(
+                    newt[k].detach().cpu().to(torch.int32).tolist())
         for p in pos:
-            pref = ids[0, : p + 1]
-            if pref.shape[0] > GEN_PAD:
-                pref = pref[-GEN_PAD:]
-            padlen = GEN_PAD - pref.shape[0]
-            pad = torch.full((padlen,), PAD_ID, dtype=ids.dtype, device=dev)
-            m = torch.cat([torch.zeros(padlen, dtype=torch.long, device=dev),
-                           torch.ones(pref.shape[0], dtype=torch.long, device=dev)])
-            for _ in range(args.rollouts):
-                bids.append(torch.cat([pad, pref])); bmask.append(m); border.append(p)
-        with torch.no_grad():
-            g = model.generate(input_ids=torch.stack(bids), attention_mask=torch.stack(bmask),
-                               min_new_tokens=args.rollout_len, max_new_tokens=args.rollout_len,
-                               do_sample=True, temperature=1.0, top_p=0.95,
-                               pad_token_id=tok.eos_token_id)
-        newt = g[:, GEN_PAD:]
-        token_ids_by_pos = {}
-        for k, p in enumerate(border):
-            token_ids_by_pos.setdefault(p, []).append(
-                newt[k].detach().cpu().to(torch.int32).tolist())
-        for p in pos:
-            cont_token_rows = token_ids_by_pos[p]
+            cont_token_rows = token_ids_by_pos.get(p, [])
             conts = [tok.decode(x, skip_special_tokens=True) for x in cont_token_rows]
             topk = torch.topk(logits[p], args.topk).indices.tolist()
             top_strs = [tok.decode([t]) for t in topk]
