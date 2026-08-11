@@ -15,7 +15,7 @@ select,button,input,textarea{font:inherit;border:1px solid var(--line);border-ra
 button{background:var(--clay);color:#fff;border:0;cursor:pointer;font-weight:600}
 button.ghost{background:#fff;color:var(--mut);border:1px solid var(--line);font-weight:500}
 button:disabled{opacity:.45;cursor:default}
-.wrap{display:grid;grid-template-columns:280px 1fr 620px;height:calc(100vh - 51px)}
+.wrap{display:grid;grid-template-columns:240px 1fr 940px;height:calc(100vh - 51px)}
 .poshd{margin-bottom:8px}.tokline{font-family:ui-monospace;font-size:12.5px;margin-top:3px}
 .nextline{font-size:11.5px;color:var(--mut);margin-top:4px}.srcline{font-size:11px;color:var(--fai);margin-top:4px}
 .mathd{margin-top:13px;padding:6px 0 4px;border-bottom:1px solid var(--line);font-size:11px;font-weight:700;
@@ -24,7 +24,7 @@ button:disabled{opacity:.45;cursor:default}
 .mrow{display:grid;grid-template-columns:150px 1fr 1fr;gap:8px;padding:6px 0;border-top:1px solid var(--line);align-items:start}
 .mrow:first-of-type{border-top:0}
 .mname{font-size:11px;color:var(--mut);font-weight:600;line-height:1.35}
-.mcell{font-size:11.5px;line-height:1.7}
+.mcell{font-size:13px;line-height:1.75}
 .clab{display:block;font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:var(--fai);margin-bottom:2px}
 .tk{display:inline-block;margin:0 5px 2px 0;font-family:ui-monospace;font-size:11px}.tk i{color:var(--mut)}.tk.lo{opacity:.4}
 .none{color:var(--fai)}
@@ -42,7 +42,10 @@ button:disabled{opacity:.45;cursor:default}
 .turn{border-radius:9px;padding:10px 12px;margin-bottom:12px;border:1px solid var(--line)}
 .turn.u{background:var(--user)}.turn.a{background:var(--asst)}
 .aohd{margin-top:13px;padding-top:9px;border-top:2px solid var(--clay);font-size:12px;font-weight:700;color:var(--clay)}
-.aoroll{font-family:ui-monospace,monospace;font-size:11.3px;line-height:1.4;padding:3px 0;border-top:1px solid var(--line);color:var(--ink)}
+.aoroll{font-family:ui-monospace,monospace;font-size:13px;line-height:1.55;padding:4px 0;border-top:1px solid var(--line);color:var(--ink)}
+.mrow.aorow{display:block}
+.mrow.aorow .mname{margin-bottom:5px;font-size:12px}
+.mrow.aorow .aoroll{width:100%;white-space:pre-wrap}
 .aoroll:first-of-type{border-top:0}
 .turn h4{margin:0 0 7px;font-size:11px;letter-spacing:.07em;text-transform:uppercase;
  color:var(--mut);font-weight:700}
@@ -86,6 +89,8 @@ a{color:var(--clay)}
  </select></span>
  <span><label>show</label><input id="topk" type="number" value="8" min="1" max="30"
    style="width:56px"></span>
+ <span><label title="which cNLA checkpoint generates the on-policy verbalization">cNLA ckpt</label>
+   <select id="cnlackpt" style="max-width:220px"><option value="">default (longhorizon:iter_000300)</option></select></span>
  <span><label title="hide tokens already shown at an earlier row">
    <input type="checkbox" id="dedup"> new only</label></span>
  <span><label title="soft-grey tokens below 1% probability">
@@ -235,12 +240,12 @@ async function pick(pos,el){
       +`<div class="mcell"><span class="clab">J off (logit)</span>${cell(rowsR[hd])}</div></div>`;});
   $('#insp').innerHTML=h;
   // trained future-lens MATRIX: {J(h)@L, raw@L, raw@penult} x {AO, naive}, fired concurrently.
-  const cfgs=[{k:'jac',lab:`J(h) L${L}→${PEN} · WITH Jacobian`,layer:L,use_j:true},
-              {k:'raw',lab:`raw L${L} · NO Jacobian`,layer:L,use_j:false}];
-  if(L!==PEN) cfgs.push({k:'pen',lab:`raw L${PEN} · penultimate (training layer, no mismatch)`,layer:PEN,use_j:false});
+  const cfgs=[{k:'jac',lab:`L${L} (J)`,layer:L,use_j:true},
+              {k:'raw',lab:`L${L}`,layer:L,use_j:false}];
+  if(L!==PEN) cfgs.push({k:'pen',lab:`L${PEN}`,layer:PEN,use_j:false});
   const w=document.createElement('div');
-  w.innerHTML=`<div class="mathd ao">🔮 trained future-lens (AO + naive) · 1 rollout each</div>`
-    +cfgs.map(c=>`<div class="mrow" id="ao_${c.k}"><div class="mname">${c.lab}</div><div class="mcell aoroll">generating…</div></div>`).join('');
+  w.innerHTML=`<div class="mathd ao">🔮 trained future-lens (AO / naive / RL / repeat-after-me / repeat 25k / cNLA long-horizon) · 1 rollout each</div>`
+    +cfgs.map(c=>`<div class="mrow aorow" id="ao_${c.k}"><div class="mname">${c.lab}</div><div class="mcell aoroll">generating…</div></div>`).join('');
   $('#insp').appendChild(w);
   // Trained-lens rollouts: SEQUENTIAL within this click (backend LOCK also serializes across
   // clicks), each with a 55s timeout so a GPU-contention stall never wedges the panel. A newer
@@ -250,16 +255,23 @@ async function pick(pos,el){
     if(myGen!==aoGen) return;
     const el=document.getElementById('ao_'+c.k); if(!el) continue;
     try{
-      const a=await apiT('/api/ao',{run_id:RUN.run_id,pos:pos,layer:c.layer,use_j:c.use_j,n:1,max_new:14},55000);
+      const a=await apiT('/api/ao',{run_id:RUN.run_id,pos:pos,layer:c.layer,use_j:c.use_j,n:1,max_new:14,cnla_ckpt:($('#cnlackpt')||{}).value||''},120000);
       if(myGen!==aoGen) return;
       el.innerHTML=`<div class="mname">${c.lab}</div>`
         +`<div class="mcell aoroll"><span class="clab">AO · workspace-oracle</span>${esc((a.ao||[''])[0])||'<i>(empty)</i>'}</div>`
         +(a.naive?`<div class="mcell aoroll"><span class="clab">naive future-lens</span>${esc((a.naive||[''])[0])||'<i>(empty)</i>'}</div>`:'')
-        +(a.rl?`<div class="mcell aoroll" style="border-left:3px solid #7a5aa0;padding-left:6px"><span class="clab" style="color:#7a5aa0">naive→RL autoencoder</span>${esc((a.rl||[''])[0])||'<i>(empty)</i>'}</div>`:'');
+        +(a.rl?`<div class="mcell aoroll" style="border-left:3px solid #7a5aa0;padding-left:6px"><span class="clab" style="color:#7a5aa0">naive→RL autoencoder</span>${esc((a.rl||[''])[0])||'<i>(empty)</i>'}</div>`:'')
+        +(a.repeat?`<div class="mcell aoroll" style="border-left:3px solid #2b7a4b;padding-left:6px"><span class="clab" style="color:#2b7a4b">repeat-after-me</span>${esc((a.repeat||[''])[0])||'<i>(empty)</i>'}</div>`:'')
+        +(a.repeat25k?`<div class="mcell aoroll" style="border-left:3px solid #b5651d;padding-left:6px"><span class="clab" style="color:#b5651d">repeat-after-me (25k · all-modules)</span>${esc((a.repeat25k||[''])[0])||'<i>(empty)</i>'}</div>`:'')
+        +(a.cnla_lh?`<div class="mcell aoroll" style="border-left:3px solid #0f8b8d;padding-left:6px"><span class="clab" style="color:#0f8b8d">cNLA · ${esc(a.cnla_ckpt||'')}</span>${esc((a.cnla_lh||[''])[0])||'<i>(empty)</i>'}</div>`:'');
     }catch(e){ if(myGen===aoGen) el.innerHTML=`<div class="mname">${c.lab}</div><div class="mcell" style="color:var(--fai)">⏱ GPU busy — timed out, click the token again</div>`; }
   }})();
  }catch(e){$('#insp').innerHTML='<small style="color:#b00">'+e.message+'</small>';}
 }
-['#layer','#usej','#topk','#dedup','#fade'].forEach(id=>$(id).onchange=()=>{if(SEL!==null)pick(SEL,
+['#layer','#usej','#topk','#dedup','#fade','#cnlackpt'].forEach(id=>$(id).onchange=()=>{if(SEL!==null)pick(SEL,
   document.querySelector(`.tok[data-p="${SEL}"]`));});
+// populate the cNLA-checkpoint selector from the backend
+(async()=>{try{const d=await api('/api/cnla_ckpts');const s=$('#cnlackpt');
+  (d.ckpts||[]).forEach(c=>{const o=document.createElement('option');o.value=c;o.textContent=c;s.appendChild(o);});
+}catch(e){}})();
 </script></body></html>

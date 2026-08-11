@@ -94,6 +94,14 @@ RUNS, LOCK = {}, threading.Lock()
 AO_CKPT = os.environ.get("AO_CKPT", "")
 NAIVE_CKPT = os.environ.get("NAIVE_CKPT", "")
 RL_CKPT = os.environ.get("RL_CKPT", "")   # naive future-lens RL-autoencoded on penultimate (GRPO recon reward)
+REPEAT_CKPT = os.environ.get("REPEAT_CKPT", "")   # repeat-after-me lens adapter
+REPEAT25K_CKPT = os.environ.get("REPEAT25K_CKPT", "")   # repeat-after-me, 25k / all-modules LoRA
+CNLA_LH_CKPT = os.environ.get("CNLA_LH_CKPT", "")   # compositional-NLA long-horizon RL @ step 300 (default cNLA lens)
+# selectable on-policy cNLA checkpoints for the playground dropdown (lazy-loaded)
+CNLA_CKPT_ROOTS = os.environ.get("CNLA_CKPT_ROOTS",
+    "/workspace/cnla/skip-lens/ckpts/cnla_av_L62_big,/workspace/cnla/skip-lens/ckpts/cnla_longhorizon").split(",")
+CNLA_CKPTS = {}     # display-name -> iter dir
+_cnla_loaded = []   # LRU of lazily-loaded adapter names
 PEFT = None
 if AO_CKPT:
     from peft import PeftModel
@@ -109,13 +117,28 @@ if AO_CKPT:
         PEFT.load_adapter(NAIVE_CKPT, adapter_name="naive")
     if RL_CKPT:
         PEFT.load_adapter(RL_CKPT, adapter_name="rl")
+    if REPEAT_CKPT:
+        PEFT.load_adapter(REPEAT_CKPT, adapter_name="repeat")
+    if REPEAT25K_CKPT:
+        PEFT.load_adapter(REPEAT25K_CKPT, adapter_name="repeat25k")
+    if CNLA_LH_CKPT:
+        PEFT.load_adapter(CNLA_LH_CKPT, adapter_name="cnla_lh")
+    import glob as _glob
+    for _root in CNLA_CKPT_ROOTS:
+        _root = _root.strip()
+        _tag = ("warmstart" if _root.endswith("cnla_av_L62_big")
+                else "longhorizon" if _root.endswith("cnla_longhorizon")
+                else os.path.basename(_root))
+        for _d in sorted(_glob.glob(_root + "/iter_*")):
+            CNLA_CKPTS[f"{_tag}:{os.path.basename(_d)}"] = _d
+    print(f"[wc] selectable cNLA checkpoints: {len(CNLA_CKPTS)}", flush=True)
     _inj_char, _inj_id = find_injection_token(tok)
     _left, _right = compute_canonical_neighbors(tok, ACTOR_TEMPLATE, _inj_char, _inj_id)
     _vref = [None]; register_karvonen_hook(PEFT, _vref, _inj_id, _left, _right); PEFT._fl_vref = _vref
     _s = tok.apply_chat_template([{"role": "user", "content": ACTOR_TEMPLATE.format(injection_char=_inj_char)}],
                                  tokenize=False, add_generation_prompt=True, enable_thinking=False)
     _PT = torch.tensor([tok.encode(_s, add_special_tokens=False)], device=dev)
-    print(f"[wc] future-lens adapters loaded: ao{' + naive' if NAIVE_CKPT else ''}{' + rl' if RL_CKPT else ''}", flush=True)
+    print(f"[wc] future-lens adapters loaded: ao{' + naive' if NAIVE_CKPT else ''}{' + rl' if RL_CKPT else ''}{' + repeat' if REPEAT_CKPT else ''}{' + repeat25k' if REPEAT25K_CKPT else ''}{' + cnla_lh' if CNLA_LH_CKPT else ''}", flush=True)
 
 
 @torch.no_grad()
@@ -139,6 +162,25 @@ def _brollout(activation, adapter, n=4, max_new=24, temp=0.7):
     return [tok.decode(x[_PT.shape[1]:], skip_special_tokens=True).strip() for x in g]
 
 
+def _ensure_cnla_adapter(name):
+    """Lazy-load a selectable cNLA checkpoint as an adapter; LRU-evict to bound GPU memory."""
+    if name not in CNLA_CKPTS:
+        return "cnla_lh"
+    aname = "cnla::" + name
+    if aname in _cnla_loaded:
+        _cnla_loaded.remove(aname)
+    else:
+        PEFT.load_adapter(CNLA_CKPTS[name], adapter_name=aname)
+    _cnla_loaded.append(aname)
+    while len(_cnla_loaded) > 6:
+        old = _cnla_loaded.pop(0)
+        try:
+            PEFT.delete_adapter(old)
+        except Exception:
+            pass
+    return aname
+
+
 def unit_rms(x):
     return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + EPS)
 
@@ -158,6 +200,8 @@ def readout(h, head, use_j, layer, topk=10):
         hidden = z
         scale = 1.0
     else:
+        if int(head) not in HEADW:
+            raise HTTPException(404, f"horizon head k={head} not loaded (HEADS dir empty/missing)")
         A, b, scale, xmode = HEADW[int(head)]
         x = unit_rms(z) if xmode == "unit" else z
         hidden = x @ A.T + b
@@ -299,6 +343,7 @@ class AoReq(BaseModel):
     use_j: bool = True
     n: int = 1        # batched DeltaNet decode is pathologically slow for n>1 in this build; keep 1
     max_new: int = 20
+    cnla_ckpt: str = ""   # optional: pick which cNLA checkpoint generates the verbalization
 
 
 @app.post("/api/ao")
@@ -321,7 +366,24 @@ def api_ao(r: AoReq, _=Depends(require_auth)):
             out["naive"] = _brollout(h, "naive", n, mx)
         if RL_CKPT:
             out["rl"] = _brollout(h, "rl", n, mx)
+        if REPEAT_CKPT:
+            out["repeat"] = _brollout(h, "repeat", n, mx)
+        if REPEAT25K_CKPT:
+            out["repeat25k"] = _brollout(h, "repeat25k", n, mx)
+        if CNLA_LH_CKPT or r.cnla_ckpt:
+            # cNLA emits 4 bullets — give it room (the shared mx=14 truncates to ~1 bullet).
+            # cnla_ckpt lets the user pick which checkpoint verbalizes; else the wired default.
+            _cad = _ensure_cnla_adapter(r.cnla_ckpt) if r.cnla_ckpt else "cnla_lh"
+            out["cnla_lh"] = _brollout(h, _cad, n, max(mx, 128))
+            out["cnla_ckpt"] = r.cnla_ckpt or "default (longhorizon:iter_000300)"
     return out
+
+
+@app.get("/api/cnla_ckpts")
+def api_cnla_ckpts(_=Depends(require_auth)):
+    """Selectable on-policy cNLA checkpoints for the playground dropdown."""
+    return {"ckpts": sorted(CNLA_CKPTS.keys()),
+            "default": "longhorizon:iter_000300 (wired)"}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -340,11 +402,14 @@ if __name__ == "__main__":
         # n/max_new so the first click of every lens is fast (the DeltaNet fla kernel recompiles per
         # (adapter, generate-length); the UI matrix always calls n=1, max_new=14).
         _z = torch.zeros(W_U.shape[1], device=dev)
-        for _ad in [a for a in ("ao", "naive", "rl")
-                    if (a == "ao") or (a == "naive" and NAIVE_CKPT) or (a == "rl" and RL_CKPT)]:
+        for _ad in [a for a in ("ao", "naive", "rl", "repeat", "repeat25k", "cnla_lh")
+                    if (a == "ao") or (a == "naive" and NAIVE_CKPT) or (a == "rl" and RL_CKPT)
+                    or (a == "repeat" and REPEAT_CKPT) or (a == "repeat25k" and REPEAT25K_CKPT)
+                    or (a == "cnla_lh" and CNLA_LH_CKPT)]:
             try:
-                _brollout(_z, _ad, n=1, max_new=14)
-                print(f"[wc] warmup: {_ad} generate shape compiled (n=1,max_new=14)", flush=True)
+                _mn = 128 if _ad == "cnla_lh" else 14   # cNLA emits full bullets @128; compile that length
+                _brollout(_z, _ad, n=1, max_new=_mn)
+                print(f"[wc] warmup: {_ad} generate shape compiled (n=1,max_new={_mn})", flush=True)
             except Exception as e:
                 print(f"[wc] warmup {_ad} skipped: {e!r}", flush=True)
     print(f"[wc] serving on 0.0.0.0:{PORT}", flush=True)
