@@ -85,6 +85,19 @@ def test_jvp_matches_finite_differences(tiny, patched):
     assert rel < 1e-2, f"rel err {rel:.4f}"
 
 
+def test_dvjp_matches_jvp_on_standard_ops(tiny, patched):
+    """On a plain Llama (no custom kernels) forward- and reverse-mode agree,
+    so the double-VJP backend must reproduce the jvp transports exactly."""
+    ids, mask, p_pos = make_batch()
+    torch.manual_seed(7)
+    tangents = torch.randn(ids.shape[0], D)
+    t_jvp, _, _ = cjt.jvp_transports(tiny, ids, mask, p_pos, tangents)
+    t_dvjp, _ = cjt.dvjp_transports(tiny, ids, mask, p_pos, tangents)
+    assert torch.allclose(t_jvp, t_dvjp, atol=1e-4), (
+        f"max err {(t_jvp - t_dvjp).abs().max():.2e}"
+    )
+
+
 def test_zero_tangent_gives_zero_transport(tiny, patched):
     ids, mask, p_pos = make_batch()
     t, _, _ = cjt.jvp_transports(tiny, ids, mask, p_pos, torch.zeros(ids.shape[0], D))
