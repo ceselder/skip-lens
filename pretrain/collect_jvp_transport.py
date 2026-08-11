@@ -422,8 +422,12 @@ def vjp_crosscheck(model, ids, mask, p_pos, tangent_vecs, t_jvp,
     errs = []
     try:
         with torch.enable_grad():
-            model(input_ids=ids[row : row + 1], attention_mask=mask[row : row + 1],
-                  use_cache=False)
+            # Probe on the SAME batch shape the transports used: in bf16 a
+            # batch-1 re-forward differs from the batched one by ~5% at the
+            # vector level (kernel-shape reduction order), which would drown
+            # the identity being tested. Same-graph comparison isolates AD
+            # correctness (see diag_dvjp_probe.py).
+            model(input_ids=ids, attention_mask=mask, use_cache=False)
             for delta in deltas:
                 # L2-aggregate over probes: sqrt(sum (lhs-rhs)^2 / sum rhs^2).
                 # A per-probe ratio has a heavy-tailed denominator (a random
@@ -437,11 +441,11 @@ def vjp_crosscheck(model, ids, mask, p_pos, tangent_vecs, t_jvp,
                     u = torch.randn(store["h62"].shape[-1], generator=gen).to(
                         ids.device)
                     tpos = int(p_pos[row]) + delta
-                    out_scalar = (store["h62"][0, tpos].float() * u).sum()
+                    out_scalar = (store["h62"][row, tpos].float() * u).sum()
                     g = torch.autograd.grad(out_scalar, store["h42"],
                                             retain_graph=True)[0]
                     lhs = float((t_jvp[row, delta].float() * u).sum())
-                    rhs = float((g[0, int(p_pos[row])].float() * v.float()).sum())
+                    rhs = float((g[row, int(p_pos[row])].float() * v.float()).sum())
                     num += (lhs - rhs) ** 2
                     den += rhs**2
                 errs.append((num / (den + 1e-12)) ** 0.5)
@@ -509,7 +513,11 @@ def run_selftest(args, model_bf16, tok, pad_id, shard):
 
     Path(args.out_dir).mkdir(parents=True, exist_ok=True)
     json.dump(report, open(Path(args.out_dir) / "selftest.json", "w"), indent=2)
-    if max(dvjp_errs) < 3e-2:
+    # Gate = 5e-2: the bf16 same-graph noise floor is 1-3% (measured in
+    # diag_dvjp_probe.py section A: double- vs single-backward accumulation
+    # order through 20 blocks); fp32 shows <1e-3. Genuine AD defects show
+    # up as >>10% (and did, before the probe metric was fixed).
+    if max(dvjp_errs) < 5e-2:
         verdict = "DVJP VALID — collect with --backend dvjp"
     else:
         verdict = "DVJP identity FAILED — do not collect, investigate"
