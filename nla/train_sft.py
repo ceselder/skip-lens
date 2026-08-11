@@ -39,6 +39,36 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 
 from nla.utils import critic_predict, register_karvonen_hook
+from nla.utils.critic import critic_predict_all
+
+
+class ResidualMLPHead(torch.nn.Module):
+    """Deep AR value head: n pre-norm residual MLP blocks + an identity affine, init ≈ identity.
+    Input/output [*, d]. Residual branches are zero-init (fc2 weight/bias = 0) and the final
+    affine is the identity, so at init this is EXACTLY the old Linear-identity head — training
+    starts from the same reconstruction, then the extra capacity co-trains in. LayerNorm +
+    residual stream + GELU = the standard tricks that make deep MLPs trainable."""
+
+    def __init__(self, d, hidden, n_layers=4):
+        super().__init__()
+        self.blocks = torch.nn.ModuleList([
+            torch.nn.ModuleDict({
+                "norm": torch.nn.LayerNorm(d),
+                "fc1": torch.nn.Linear(d, hidden),
+                "fc2": torch.nn.Linear(hidden, d),
+            }) for _ in range(n_layers)
+        ])
+        self.out = torch.nn.Linear(d, d)
+        with torch.no_grad():
+            for b in self.blocks:
+                torch.nn.init.normal_(b["fc1"].weight, std=0.02); torch.nn.init.zeros_(b["fc1"].bias)
+                torch.nn.init.zeros_(b["fc2"].weight); torch.nn.init.zeros_(b["fc2"].bias)  # zero residual branch
+            self.out.weight.copy_(torch.eye(d)); torch.nn.init.zeros_(self.out.bias)
+
+    def forward(self, x):
+        for b in self.blocks:
+            x = x + b["fc2"](torch.nn.functional.gelu(b["fc1"](b["norm"](x))))
+        return self.out(x)
 from nla.utils.run_config import add_config_arg, apply_config_defaults, save_resolved_config
 from nla.config import load_nla_config
 from nla.injection import karvonen_inject_in_residual
@@ -509,6 +539,22 @@ def main():
                    help="AR mode: freeze the backbone and train ONLY the "
                         "value_head — a linear-probe baseline for how much of "
                         "the reconstruction is already linearly decodable.")
+    p.add_argument("--ar-all-idx", action="store_true", default=False,
+                   help="AR mode: DENSE objective — supervise the value head to reproduce the "
+                        "target activation at EVERY position (each causal prefix), not just the "
+                        "last/anchor token. 'reconstruct-as-you-read'; no privileged read point.")
+    p.add_argument("--ar-mlp-head", action="store_true", default=False,
+                   help="AR mode: replace the Linear(d,d) value head with a deep pre-norm residual "
+                        "MLP + identity affine (identity-init, co-trained) — tests whether the head "
+                        "was the reconstruction bottleneck.")
+    p.add_argument("--ar-mlp-hidden", type=int, default=16384, help="hidden dim of the residual-MLP head")
+    p.add_argument("--ar-mlp-layers", type=int, default=4, help="number of residual-MLP blocks")
+    p.add_argument("--ar-summary-token", action="store_true", default=False,
+                   help="AR mode: register a dedicated <|summary|> special token as the read "
+                        "anchor (data prompts must END with it). Trains ONLY {LoRA adapters + "
+                        "value_head + the new token's embedding row} — a grad hook zeroes the "
+                        "embedding gradient for every other row. Tests whether a purpose-built "
+                        "single aggregation token beats the multi-bpe '</text> <summary>' anchor.")
     # ---- Debug sampling: periodically dump example generations to a wandb Table ----
     p.add_argument("--sample-every", type=int, default=0,
                    help="Every N steps, log example generations to an accumulating "
@@ -621,6 +667,19 @@ def main():
     # From --base-ckpt, NOT hardcoded — the sidecar asserts below catch a
     # wrong-family tokenizer, but only if we load the one the run targets.
     tokenizer = AutoTokenizer.from_pretrained(args.base_ckpt)
+    # --ar-summary-token: register the dedicated read-anchor token BEFORE any
+    # data tokenization so encode() emits its id wherever the literal string
+    # "<|summary|>" appears in the critic prompts (add_special_tokens=False
+    # still resolves REGISTERED special tokens found in the text).
+    sumtok_id = None
+    if args.ar_summary_token:
+        assert args.mode == "ar", "--ar-summary-token is AR-only"
+        _n_added = tokenizer.add_special_tokens(
+            {"additional_special_tokens": ["<|summary|>"]})
+        sumtok_id = tokenizer.convert_tokens_to_ids("<|summary|>")
+        assert isinstance(sumtok_id, int) and sumtok_id >= 0
+        print(f"[sumtok] registered <|summary|> (added={_n_added}) -> id {sumtok_id} "
+              f"(len(tokenizer)={len(tokenizer)})", flush=True)
     cfg = load_nla_config(args.sidecar, tokenizer)
     mse_scale_f = resolve_target_scale(cfg.mse_scale, cfg.d_model)
     print(f"[cfg] mode={args.mode} d_model={cfg.d_model} mse_scale={mse_scale_f}")
@@ -641,6 +700,7 @@ def main():
             )
 
     # ---- model ----
+    sumtok_emb_weight = None   # set on the AR path when --ar-summary-token
     if args.mode == "av":
         print(f"[av] loading {args.base_ckpt} (quant={args.quant}, lora={args.use_lora})")
         quant_config = None
@@ -743,6 +803,13 @@ def main():
                 bias="none", task_type="CAUSAL_LM", use_rslora=True,
                 target_modules=resolve_attn_target_modules(model.backbone.config),
             ), model.backbone)
+            if args.ar_mlp_head:
+                _hd = next(model.value_head.parameters()).device
+                model.value_head = ResidualMLPHead(
+                    cfg.d_model, args.ar_mlp_hidden, args.ar_mlp_layers).to(device=_hd, dtype=torch.float32)
+                print(f"[ar] value_head -> ResidualMLPHead(d={cfg.d_model} hidden={args.ar_mlp_hidden} "
+                      f"layers={args.ar_mlp_layers}) identity-init fp32 "
+                      f"({sum(p.numel() for p in model.value_head.parameters())/1e6:.0f}M params)", flush=True)
             # Train ONLY the LoRA adapters + the value_head; freeze the rest.
             for n_, p_ in model.named_parameters():
                 p_.requires_grad_(("lora_" in n_) or n_.startswith("value_head"))
@@ -766,12 +833,91 @@ def main():
                 p_.requires_grad_(True)
             print("[ar] backbone FROZEN — training value_head only "
                   "(linear-probe baseline, --freeze-backbone)")
+        if args.ar_summary_token:
+            # Give <|summary|> an embedding row and make ONLY that row learn.
+            # Runs AFTER the LoRA/freeze requires_grad loops (they froze the
+            # embedding) and BEFORE the optimizer gathers requires_grad params.
+            emb = model.backbone.get_input_embeddings()
+            V_old, d_emb = emb.weight.shape
+            if sumtok_id >= V_old:
+                # backbone.resize_token_embeddings would also try to resize the
+                # output head, which is nn.Identity here (lm_head stripped) —
+                # build the enlarged input embedding manually instead.
+                new_emb = torch.nn.Embedding(
+                    sumtok_id + 1, d_emb,
+                    dtype=emb.weight.dtype, device=emb.weight.device)
+                with torch.no_grad():
+                    new_emb.weight[:V_old] = emb.weight
+                    new_emb.weight[V_old:] = emb.weight.mean(dim=0, keepdim=True)
+                model.backbone.set_input_embeddings(new_emb)
+                model.backbone.config.vocab_size = sumtok_id + 1
+                model.config.vocab_size = sumtok_id + 1
+                emb = model.backbone.get_input_embeddings()
+                print(f"[sumtok] input embeddings resized {V_old} -> {sumtok_id + 1} "
+                      f"(new row init = mean of existing rows)", flush=True)
+            else:
+                # padded vocab: the model already has a (untrained) row at this id
+                with torch.no_grad():
+                    emb.weight[sumtok_id] = emb.weight[:V_old].mean(dim=0)
+                print(f"[sumtok] id {sumtok_id} < embedding rows {V_old} (padded "
+                      f"vocab) — no resize; row re-init = mean of existing rows",
+                      flush=True)
+            # Autograd needs the whole leaf trainable; a grad hook zeroes every
+            # row except the new token's so nothing else moves (weight_decay=0,
+            # and Adam moments stay exactly 0 where grads are exactly 0).
+            emb.weight.requires_grad_(True)
+            sumtok_emb_weight = emb.weight
+            _sumtok_hook_dbg = [True]
+
+            def _sumtok_grad_mask(grad, _tid=sumtok_id, _dbg=_sumtok_hook_dbg):
+                out = torch.zeros_like(grad)
+                out[_tid] = grad[_tid]
+                if _dbg[0]:
+                    _dbg[0] = False
+                    nz_in = int((grad.abs().sum(dim=1) > 0).sum().item())
+                    nz_out = (out.abs().sum(dim=1) > 0).nonzero().flatten().tolist()
+                    print(f"[sumtok] grad-mask hook (first backward): incoming rows "
+                          f"w/ nonzero grad = {nz_in}; after mask = {nz_out} "
+                          f"(expect [{_tid}]); |g[{_tid}]| = "
+                          f"{out[_tid].norm().item():.3e}", flush=True)
+                return out
+
+            emb.weight.register_hook(_sumtok_grad_mask)
+            print(f"[sumtok] embedding row {sumtok_id} TRAINABLE "
+                  f"(grad hook masks all other rows)", flush=True)
     model.train()
 
     # ---- data ----
     print(f"[data] loading {args.parquet} (max_rows={args.max_rows})", flush=True)
     rows = load_sft_dataset(args.parquet, n_max=args.max_rows, mode=args.mode)
     print(f"[data] {len(rows)} rows", flush=True)
+    ar_prefix_len = 0
+    if args.mode == "ar" and args.ar_all_idx:
+        # dense objective supervises every position from the explanation start on
+        # (skip the fixed template prefix before {explanation}, which carries no signal).
+        _prefix = (cfg.critic_prompt_template or "{explanation}").split("{explanation}")[0]
+        ar_prefix_len = len(tokenizer.encode(_prefix, add_special_tokens=False))
+        print(f"[ar] ALL-IDX dense supervision; skipping first {ar_prefix_len} prefix tokens", flush=True)
+    if args.mode == "ar" and args.ar_summary_token:
+        # Replaces the critic_suffix_ids check (sidecar sets it null for this
+        # variant): the tokenized prompt must END with the <|summary|> id, or
+        # last-token extraction reads the wrong position.
+        _ids0 = tokenizer.encode(rows[0]["prompt"], add_special_tokens=False)
+        assert _ids0 and _ids0[-1] == sumtok_id, (
+            f"sumtok: rows[0] tokenized tail {_ids0[-4:]} does not end with "
+            f"<|summary|> id {sumtok_id} — data prompts must end with the "
+            f"literal '<|summary|>' string")
+        print(f"[sumtok] rows[0] tail ids {_ids0[-4:]} -> "
+              f"{tokenizer.convert_ids_to_tokens(_ids0[-4:])} "
+              f"(last == <|summary|> ✓)", flush=True)
+        if cfg.critic_prompt_template is not None:
+            _tids = tokenizer.encode(
+                cfg.critic_prompt_template.format(explanation="x"),
+                add_special_tokens=False)
+            assert _tids[-1] == sumtok_id, (
+                f"sidecar ar template must end with <|summary|> "
+                f"(heldout eval uses it); got last id {_tids[-1]}")
+            print(f"[sumtok] heldout template ends with <|summary|> ✓", flush=True)
     if args.mode == "ar" and cfg.critic_suffix_ids:
         # One-time suffix-anchor sanity check (the sidecar field's stated
         # purpose): the tokenized critic prompt must end with the expected
@@ -799,6 +945,13 @@ def main():
         "no trainable parameters — --freeze-backbone freezes the whole AR, so "
         "there is nothing to optimize in AR-SFT. Drop --freeze-backbone."
     )
+    if sumtok_emb_weight is not None:
+        assert any(p_ is sumtok_emb_weight for p_ in trainable), (
+            "sumtok: embedding weight missing from the optimizer's trainable set — "
+            "requires_grad flip must run before this point")
+        print(f"[sumtok] embedding weight IS in optimizer trainables "
+              f"({tuple(sumtok_emb_weight.shape)}; only row {sumtok_id} receives grad)",
+              flush=True)
     optim = optim_cls(trainable, lr=args.lr, betas=(0.9, 0.95), weight_decay=0.0)
     sched = torch.optim.lr_scheduler.LambdaLR(
         optim,
@@ -863,6 +1016,14 @@ def main():
     sample_table_data = []
 
     # ---- training loop ----
+    _sumtok_row0 = (sumtok_emb_weight[sumtok_id].detach().float().clone()
+                    if sumtok_emb_weight is not None else None)
+    _sumtok_nbr0 = (sumtok_emb_weight[sumtok_id - 1].detach().float().clone()
+                    if sumtok_emb_weight is not None else None)
+    _sumtok_moved = [False]
+    if _sumtok_row0 is not None:
+        print(f"[sumtok] emb row init norm = {_sumtok_row0.norm().item():.3e} "
+              f"(mean |elem| = {_sumtok_row0.abs().mean().item():.3e})", flush=True)
     rng = np.random.default_rng(args.seed)
     perm = list(range(len(rows)))
     rng.shuffle(perm)
@@ -931,12 +1092,27 @@ def main():
                 ids, attn, gold = _ar_prepare_chunk(
                     chunk_rows, tokenizer, device, max_len=args.max_len,
                 )
-                with amp():
-                    pred = critic_predict(model, ids, attn, mse_scale_f)
-                pred_n = normalize_activation(pred, mse_scale_f)
                 gold_n = normalize_activation(gold, mse_scale_f)
-                loss = F.mse_loss(pred_n, gold_n)
-                ar_dbg = ar_debug_stats(pred, gold, mse_scale_f)
+                if args.ar_all_idx:
+                    # dense: supervise reconstruction at EVERY position (causal prefix -> target).
+                    with amp():
+                        pred_all = critic_predict_all(model, ids, attn, mse_scale_f)  # [B,T,D]
+                    B_, T_, D_ = pred_all.shape
+                    pred_all_n = normalize_activation(
+                        pred_all.reshape(B_ * T_, D_), mse_scale_f).reshape(B_, T_, D_)
+                    mse_pos = ((pred_all_n - gold_n[:, None, :]) ** 2).mean(-1)  # [B,T]
+                    sup = attn.float().clone()
+                    sup[:, :ar_prefix_len] = 0.0
+                    loss = (mse_pos * sup).sum() / sup.sum().clamp(min=1)
+                    _li = attn.sum(1) - 1                    # last real token = eval read point
+                    pred_last = pred_all[torch.arange(B_, device=pred_all.device), _li]
+                    ar_dbg = ar_debug_stats(pred_last, gold, mse_scale_f)
+                else:
+                    with amp():
+                        pred = critic_predict(model, ids, attn, mse_scale_f)
+                    pred_n = normalize_activation(pred, mse_scale_f)
+                    loss = F.mse_loss(pred_n, gold_n)
+                    ar_dbg = ar_debug_stats(pred, gold, mse_scale_f)
 
             # Scale loss for accumulation; gradients sum correctly.
             try:
@@ -951,6 +1127,24 @@ def main():
         grad_norm = torch.nn.utils.clip_grad_norm_(trainable, args.max_grad_norm)
         optim.step()
         sched.step()
+        if _sumtok_row0 is not None:
+            # NOTE: the FIRST optim.step() runs at warmup lr = 0 (LambdaLR
+            # evaluates lambda(0) = 0/warmup), so Δ == 0 at step 0 is expected;
+            # the row must move once lr > 0 — bf16 ULP rounding is the failure
+            # mode to catch (see the fp32 value_head comments above).
+            _row = sumtok_emb_weight[sumtok_id].detach().float()
+            _d_new = (_row - _sumtok_row0).norm().item()
+            if not _sumtok_moved[0] and _d_new > 0:
+                _sumtok_moved[0] = True
+                print(f"[sumtok] emb row FIRST MOVED at step {step}: "
+                      f"|Δ| = {_d_new:.3e}", flush=True)
+            if (step + 1) in (2, 5, 10, 20, 50, 100) or (step + 1) % 150 == 0:
+                _d_nbr = (sumtok_emb_weight[sumtok_id - 1].detach().float()
+                          - _sumtok_nbr0).norm().item()
+                print(f"[sumtok] step {step}: cumulative |Δ emb[{sumtok_id}]| = "
+                      f"{_d_new:.3e} (row norm {_row.norm().item():.3e}, init "
+                      f"{_sumtok_row0.norm().item():.3e}); |Δ frozen nbr row| = "
+                      f"{_d_nbr:.3e} (must be exactly 0)", flush=True)
 
         mean_loss = accum_loss / max(accum_n, 1)
         cur_lr = sched.get_last_lr()[0]
@@ -1081,6 +1275,11 @@ def main():
                 sd = {n: p.detach().cpu().contiguous()
                       for n, p in model.named_parameters()
                       if ("lora_" in n) or n.startswith("value_head")}
+                if sumtok_emb_weight is not None:
+                    # the ONLY embedding row that trained — reload = resize +
+                    # copy this row at sumtok_id (recorded in ar_meta.json).
+                    sd["sumtok_embedding_row"] = (
+                        sumtok_emb_weight[sumtok_id].detach().cpu().contiguous())
                 save_file(sd, str(out_dir / "ar_lora_value_head.safetensors"))
                 from nla.utils.arch_adapters import resolve_attn_target_modules
                 (out_dir / "ar_meta.json").write_text(json.dumps({
@@ -1096,6 +1295,10 @@ def main():
                     # RL must rebuild the critic the same way or predictions
                     # silently shift (pre-2026-06 ckpts: norm kept = False).
                     "final_norm_stripped": args.strip_final_norm,
+                    # --ar-summary-token: id of the dedicated <|summary|> read
+                    # anchor whose (sole trained) embedding row is saved as
+                    # 'sumtok_embedding_row' in the safetensors. null otherwise.
+                    "summary_token_id": sumtok_id,
                 }, indent=2))
                 tokenizer.save_pretrained(str(out_dir))
             else:

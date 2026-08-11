@@ -9,18 +9,28 @@ For each sampled position t in a corpus doc, store:
   - top_tokens        : top-k next-token strings (the distribution) — cheap extra
                         signal for the labeler.
   - ctx_text          : decoded context tail (for eval display).
+  - teacher_input_ids : exact source tokens through t.  OPD gives these to the
+                        frozen teacher while the student receives only the
+                        activation.  Token IDs avoid decode/re-encode drift.
+  - continuation_ids  : the corpus continuation after t (evaluation only).
+  - rollout_token_ids : exact IDs corresponding to `rollouts` (SFT targets).
   - prompt            : the AV inject template with <INJECT>.
 
 Claude then labels each row (gen_concept_descriptions / a rollout-summary prompt)
 -> `response` column, and train_sft --mode av trains the AO (inject at block 1).
 """
-import argparse, json, os
+import argparse
+import itertools
+import json
+import os
 from pathlib import Path
+
 import numpy as np
-import torch
 import pyarrow as pa
 import pyarrow.parquet as pq
+import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
+
 from nla.datagen.injection_tokens import find_injection_token
 from nla.schema import compute_canonical_neighbors
 
@@ -37,12 +47,21 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base-ckpt", default="Qwen/Qwen3.6-27B")
     ap.add_argument("--corpus", required=True)
+    ap.add_argument("--corpus-config", default=None,
+                    help="optional Hugging Face dataset config when --corpus is a Hub ID")
     ap.add_argument("--out", required=True)
     ap.add_argument("--layer", type=int, default=62)
     ap.add_argument("--layers", type=int, nargs="+", default=None,
                     help="multiple TRAINING layers to grab, token-matched (overrides --layer); "
                          "stored as act_L{l} columns for a training-layer sweep")
     ap.add_argument("--n-docs", type=int, default=700)
+    ap.add_argument("--doc-offset", type=int, default=0,
+                    help="skip the first N corpus docs (for sharded parallel collection: "
+                         "shard i uses --doc-offset i*n_docs --n-docs n_docs, non-overlapping)")
+    ap.add_argument("--doc-indices-file", default=None,
+                    help="explicit corpus row indices (whitespace-separated) to collect, "
+                         "overriding --doc-offset/--n-docs. doc_id = d<true corpus index>, so a "
+                         "held-out set (complement of a prior collect) stays provably disjoint.")
     ap.add_argument("--positions-per-doc", type=int, default=5)
     ap.add_argument("--rollouts", type=int, default=16)   # "a ton" — dense sample of what comes next
     ap.add_argument("--rollout-len", type=int, default=8)  # SHORT — the concept within the next 4-8 tokens
@@ -86,17 +105,43 @@ def main():
             lambda m, i, o: grab2.__setitem__("h", (o[0] if isinstance(o, tuple) else o).detach()))
         print(f"[agreement] J_L{args.agree_layer}->L{args.target_layer} + tuned lens loaded", flush=True)
 
-    pf = pq.ParquetFile(args.corpus)
-    texts = []
-    for rg in range(pf.num_row_groups):
-        texts.extend(pf.read_row_group(rg, columns=["text"]).column("text").to_pylist())
-        if len(texts) >= args.n_docs:
-            break
-    texts = [t for t in texts if t and len(t) > 120][: args.n_docs]
+    if args.doc_indices_file:
+        # explicit held-out corpus rows (guaranteed disjoint from a prior collect);
+        # doc_id keeps the TRUE corpus index so provenance/overlap stays checkable.
+        sel = [int(x) for x in open(args.doc_indices_file).read().split()]
+        pf = pq.ParquetFile(args.corpus)
+        all_texts, need = [], max(sel) + 1
+        for rg in range(pf.num_row_groups):
+            all_texts.extend(pf.read_row_group(rg, columns=["text"]).column("text").to_pylist())
+            if len(all_texts) >= need:
+                break
+        texts = [all_texts[i] for i in sel]
+        doc_true_ids = list(sel)
+    else:
+        need = args.doc_offset + args.n_docs
+        if os.path.exists(args.corpus):
+            pf = pq.ParquetFile(args.corpus)
+            texts = []
+            for rg in range(pf.num_row_groups):
+                texts.extend(pf.read_row_group(rg, columns=["text"]).column("text").to_pylist())
+                if len(texts) >= need:
+                    break
+            texts = texts[args.doc_offset:need]
+        else:
+            from datasets import load_dataset
+            stream = load_dataset(args.corpus, args.corpus_config, split="train", streaming=True)
+            rows = itertools.islice(stream, args.doc_offset, need)
+            texts = [row["text"] for row in rows]
+        doc_true_ids = [args.doc_offset + i for i in range(len(texts))]
+    # This shard's non-overlapping slice; keep doc ids aligned through the length filter.
+    _pairs = [(tid, t) for tid, t in zip(doc_true_ids, texts) if t and len(t) > 120]
+    doc_true_ids = [p[0] for p in _pairs]
+    texts = [p[1] for p in _pairs]
     prompt_msgs = [{"role": "user", "content": ACTOR_TEMPLATE.format(injection_char=INJECT_PLACEHOLDER)}]
 
     acts = {l: [] for l in LAYERS}
-    rolls, tops, ctxs, prompts, docids, ents = [], [], [], [], [], []
+    rolls, roll_ids, tops, ctxs, teacher_ids, continuation_ids = [], [], [], [], [], []
+    prompts, docids, ents = [], [], []
     # constant metadata + an atomic writer, so a long/killed collect keeps partial
     # data (this collector otherwise only writes once at the very end).
     inj_char, inj_id = find_injection_token(tok)
@@ -108,8 +153,14 @@ def main():
         cols = {
             "prompt": pa.array(prompts, type=ps),
             "rollouts": pa.array(rolls, type=pa.list_(pa.string())),
+            "rollout_token_ids": pa.array(
+                roll_ids, type=pa.list_(pa.list_(pa.int32()))),
             "top_tokens": pa.array(tops, type=pa.list_(pa.string())),
             "ctx_text": pa.array(ctxs, type=pa.string()),
+            "teacher_input_ids": pa.array(
+                teacher_ids, type=pa.list_(pa.int32())),
+            "continuation_ids": pa.array(
+                continuation_ids, type=pa.list_(pa.int32())),
             "doc_id": pa.array(docids, type=pa.string()),
             "next_token_entropy": pa.array(ents, type=pa.float32()),
         }
@@ -188,26 +239,50 @@ def main():
         else:
             sel = (torch.randperm(len(cand))[:n]).tolist()
             pos = [cand[i] for i in sel]
+        # BATCHED generation: ALL positions x rollouts of this doc in ONE constant-shape generate
+        # (every prefix LEFT-padded to GEN_PAD) so the fla/DeltaNet generate kernel compiles ONCE
+        # globally instead of recompiling per prefix length (per-position loop was ~26h/shard).
+        GEN_PAD = args.max_length
+        PAD_ID = tok.pad_token_id if tok.pad_token_id is not None else tok.eos_token_id
+        bids, bmask, border = [], [], []
         for p in pos:
-            # K sampled rollouts from context [0..p]
-            prefix = ids[:, : p + 1]
-            with torch.no_grad():
-                g = model.generate(input_ids=prefix.repeat(args.rollouts, 1),
-                                   attention_mask=torch.ones_like(prefix).repeat(args.rollouts, 1),
-                                   max_new_tokens=args.rollout_len, do_sample=True, temperature=1.0,
-                                   top_p=0.95, pad_token_id=tok.eos_token_id)
-            conts = [tok.decode(g[k, prefix.shape[1]:], skip_special_tokens=True) for k in range(args.rollouts)]
+            pref = ids[0, : p + 1]
+            if pref.shape[0] > GEN_PAD:
+                pref = pref[-GEN_PAD:]
+            padlen = GEN_PAD - pref.shape[0]
+            pad = torch.full((padlen,), PAD_ID, dtype=ids.dtype, device=dev)
+            m = torch.cat([torch.zeros(padlen, dtype=torch.long, device=dev),
+                           torch.ones(pref.shape[0], dtype=torch.long, device=dev)])
+            for _ in range(args.rollouts):
+                bids.append(torch.cat([pad, pref])); bmask.append(m); border.append(p)
+        with torch.no_grad():
+            g = model.generate(input_ids=torch.stack(bids), attention_mask=torch.stack(bmask),
+                               min_new_tokens=args.rollout_len, max_new_tokens=args.rollout_len,
+                               do_sample=True, temperature=1.0, top_p=0.95,
+                               pad_token_id=tok.eos_token_id)
+        newt = g[:, GEN_PAD:]
+        token_ids_by_pos = {}
+        for k, p in enumerate(border):
+            token_ids_by_pos.setdefault(p, []).append(
+                newt[k].detach().cpu().to(torch.int32).tolist())
+        for p in pos:
+            cont_token_rows = token_ids_by_pos[p]
+            conts = [tok.decode(x, skip_special_tokens=True) for x in cont_token_rows]
             topk = torch.topk(logits[p], args.topk).indices.tolist()
             top_strs = [tok.decode([t]) for t in topk]
             for l in LAYERS:
                 acts[l].append(hs[l][p].cpu().numpy().astype("float32").tolist())
-            rolls.append(conts); tops.append(top_strs)
+            rolls.append(conts); roll_ids.append(cont_token_rows); tops.append(top_strs)
             ctxs.append(tok.decode(ids[0, max(0, p - 47): p + 1], skip_special_tokens=True))
-            prompts.append(prompt_msgs); docids.append(f"d{di}")
+            teacher_ids.append(ids[0, :p + 1].detach().cpu().to(torch.int32).tolist())
+            continuation_ids.append(
+                ids[0, p + 1:p + 1 + args.rollout_len]
+                .detach().cpu().to(torch.int32).tolist())
+            prompts.append(prompt_msgs); docids.append(f"d{doc_true_ids[di]}")
             ents.append(pos_ent.get(p, float("nan")))
         if di % 100 == 0:
             print(f"doc {di}/{len(texts)} examples={len(rolls)}", flush=True)
-        if di % 1500 == 0 and di > 0 and rolls:
+        if di % 200 == 0 and di > 0 and rolls:
             print(f"[ckpt] wrote {write_out()} rows @ doc {di}", flush=True)
 
     n = write_out()

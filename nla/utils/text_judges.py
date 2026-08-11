@@ -37,7 +37,7 @@ import statistics
 
 import numpy as np
 
-JUDGE_MODEL = "claude-opus-4-8"
+JUDGE_MODEL = "claude-sonnet-5"   # judge-model rule: Sonnet 5 for LLM-as-judge calls
 MAX_EXPL_CHARS = 6000      # judge-input cap per explanation
 MATCH_SNIPPET_CHARS = 700  # per-candidate source tail for source_match
 N_MATCH_OPTIONS = 4        # 1 true + 3 distractors (chance = 0.25)

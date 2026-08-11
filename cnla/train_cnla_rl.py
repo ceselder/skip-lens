@@ -67,6 +67,9 @@ from nla.schema import (
 )
 from nla.train_sft import _resolve_device_map, init_critic_from_base
 
+from cnla.cnla_rl import compute_cnla_advantages
+from cnla.reward import Whitener
+
 
 
 
@@ -285,7 +288,11 @@ def grpo_update_microbatched(
     sample_losses_log = []
     sample_kls_log = []
     sample_entropy_log = []   # mean per-token policy entropy over response tokens (nats)
-    advantages = advantages.detach()  # no grad through advantage
+    # CNLA passes a LIST of per-token advantage tensors (one per rollout); the
+    # scalar-tensor path is kept for compatibility.
+    advantages = ([a.detach() for a in advantages]
+                  if isinstance(advantages, (list, tuple))
+                  else advantages.detach())  # no grad through advantage
     for cs in range(0, n, micro_batch):
         idxs = list(range(cs, min(cs + micro_batch, n)))
         bs = len(idxs)
@@ -415,6 +422,9 @@ def main():
                         "gold and FVE baseline stay activation_vector. Default "
                         "None = inject the target itself (behavior unchanged).")
     p.add_argument("--sidecar", required=True)
+    p.add_argument("--whitener", required=True,
+                   help="reward whitener .pt (cnla.fit_whitener): per-dim mean/std "
+                        "over L2-normed L62 activations")
     p.add_argument("--save-dir", required=True)
     p.add_argument("--num-steps", type=int, default=200)
     p.add_argument("--batch-prompts", type=int, default=64,
@@ -456,6 +466,20 @@ def main():
                         "signal (see the vLLM twin). 0 disables.")
     p.add_argument("--length-threshold", type=int, default=0,
                    help="Hinge point. 0 (default) => max_new_tokens - 64.")
+    p.add_argument("--loo-threshold", type=float, default=None,
+                   help="CNLA: absolute per-bullet LOO-FVE threshold. Unset "
+                        "(default) = raw marginals, behavior unchanged. Set: "
+                        "per-bullet reward becomes clamp(marginal - threshold, "
+                        "max=0) — only redundant bullets (marginal below the "
+                        "threshold) get a negative signal; bullets at/above it "
+                        "get 0, so already-good bullets are not over-optimized "
+                        "(prevents the KL blowup).")
+    p.add_argument("--missing-bullet-penalty", type=float, default=0.0,
+                   help="CNLA: per-rollout scalar missing_bullet_penalty * "
+                        "(4 - n_valid_bullets), ADDED to that rollout's bullet "
+                        "rewards BEFORE the GRPO group baseline. Pass a NEGATIVE "
+                        "value to penalize truncating to <4 bullets. 0.0 "
+                        "(default) disables (behavior unchanged).")
     p.add_argument("--gradient-checkpointing", action="store_true", default=False,
                    help="Recompute activations during backward (saves ~50% "
                         "activation memory at ~30%% compute cost). Off by "
@@ -589,6 +613,8 @@ def main():
         args.length_threshold = max(1, args.max_new_tokens - 64)
     print(f"[len] hinged penalty {args.length_penalty}/token past "
           f"{args.length_threshold} tokens (cap {args.max_new_tokens})", flush=True)
+    print(f"[cnla-reward] loo_threshold={args.loo_threshold} "
+          f"missing_bullet_penalty={args.missing_bullet_penalty}", flush=True)
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -643,6 +669,8 @@ def main():
     inject_char = cfg.injection_char
     mse_scale_f = resolve_target_scale(cfg.mse_scale, cfg.d_model)
     template = cfg.critic_prompt_template
+    whitener = Whitener.load(torch.load(args.whitener, map_location="cpu"))
+    print(f"[cnla] loaded reward whitener from {args.whitener}", flush=True)
     assert template is not None, "critic_prompt_template missing"
     print(f"[cfg] inj_id={inj_id} mse_scale_f={mse_scale_f} d_model={cfg.d_model}")
 
@@ -1110,61 +1138,35 @@ def main():
         ]
         n_truncated = int(sum(truncated))
 
-        # ---- scoring ----
-        # `rewards` holds the reconstruction reward (-MSE) and feeds FVE logging.
-        # Length shaping is applied only to `rewards_t` (the GRPO signal), so FVE
-        # stays a pure reconstruction metric comparable across runs.
-        rewards = score_with_critic(
-            critic, tokenizer, all_explanations, all_activations,
-            template, mse_scale_f, device,
+        # ---- CNLA scoring: per-bullet leave-one-out FVE → per-token advantages ----
+        # Parse each rollout's response into ≤4 "*" bullets, decode each through the
+        # FROZEN AR into a reconstruction vector, compose via globally-optimal lstsq,
+        # and give each bullet its leave-one-out FVE marginal (compute_cnla_advantages).
+        # The AR is a black-box reward, never co-trained (do NOT pass --train-critic).
+        n_truncated = int(sum(truncated))
+        adv_tokens, cnla_info = compute_cnla_advantages(
+            full_ids=all_full_ids, prompt_lens=all_prompt_lens,
+            activations=all_activations, groups=all_prompt_group,
+            response_texts=all_explanations,
+            critic=critic, tokenizer=tokenizer, whitener=whitener,
+            ar_template=template, mse_scale_f=mse_scale_f, device=device,
+            d_model=cfg.d_model, batch_prompts=args.batch_prompts,
+            loo_threshold=args.loo_threshold,
+            missing_bullet_penalty=args.missing_bullet_penalty,
         )
-        # TRUNCATED -> FAILED: a cap-truncated rollout must not be scored as if
-        # its explanation were complete — it gets the -2 failure reward, which IS
-        # trained on (the anti-runaway gradient). Keeps FVE/extraction honest.
-        rewards = [None if t else r for r, t in zip(rewards, truncated)]
-        # GRPO reward fill + optional -log transform. `rewards` holds raw -mse
-        # (or None for failed extraction); FVE below uses these raw values, so
-        # the FVE curve is identical regardless of --log-reward.
-        # Failed-extraction floor = the orthogonal-vector outcome (mse=2.0):
-        #   default -mse -> -2.0 ;  --log-reward -log(mse) -> -log(2.0) ≈ -0.69.
-        # -log(mse) keeps the reward gradient (-1/mse) strong as mse shrinks,
-        # avoiding the -mse advantage-collapse plateau (FVE flatlines ~0.47).
-        if args.log_reward:
-            _floor = -math.log(2.0)
-            rewards_filled = [
-                _floor if r is None else -math.log(min(max(-r, 1e-3), 2.0))
-                for r in rewards
-            ]
-        else:
-            rewards_filled = [-2.0 if r is None else r for r in rewards]
-        rewards_t = torch.tensor(rewards_filled, dtype=torch.float32, device=device)
-
-        # ---- reward shaping (length penalty) ----
-        # Subtracted from the GRPO signal only. Default (0) is a no-op.
-        shape_terms = {}
-        if args.length_penalty > 0:
-            n_tok = torch.tensor(
-                all_resp_lens, dtype=torch.float32, device=device,
-            )
-            overage = (n_tok - float(args.length_threshold)).clamp_min(0.0)
-            rewards_t = rewards_t - args.length_penalty * overage
-            shape_terms["av/len_pen_mean"] = (args.length_penalty * overage).mean().item()
-            shape_terms["av/len_overage_frac"] = float((overage > 0).float().mean())
-
-        # ---- GRPO group-relative advantage (per-prompt mean & std) ----
-        group_t = torch.tensor(all_prompt_group, dtype=torch.long, device=device)
-        adv = torch.zeros_like(rewards_t)
+        # zero the advantage on injection-failed rollouts (also dropped via `keep`)
+        for i, ok in enumerate(inject_ok):
+            if not ok:
+                adv_tokens[i] = torch.zeros_like(adv_tokens[i])
+        # Per-rollout composite reconstruction FVE stands in for the old scalar
+        # `rewards` list (drives the FVE log + extraction_rate); None = 0 valid bullets.
+        _fve_per = cnla_info["fve_per"]
+        _nbull = cnla_info["nbull"]
+        rewards = [float(_fve_per[i]) if int(_nbull[i]) > 0 else None
+                   for i in range(len(all_full_ids))]
+        adv = cnla_info["adv_scalar"]                 # [B] mean bullet advantage (logging)
+        shape_terms = dict(cnla_info["metrics"])
         shape_terms["av/truncated_count"] = n_truncated
-        for gi in range(args.batch_prompts):
-            # exclude injection-failed rollouts from the group baseline; truncated
-            # participate with the -2 failure reward.
-            mask = (group_t == gi) & inject_ok_t
-            if mask.sum() == 0:
-                continue
-            group_r = rewards_t[mask]
-            mu = group_r.mean()
-            sd = group_r.std() if group_r.numel() > 1 else torch.tensor(1.0, device=device)
-            adv[mask] = (group_r - mu) / (sd + 1e-6)
 
         # ---- GRPO update: fused forward+loss+backward per micro-batch ----
         # Previous code did all forwards then all backwards, which retained
@@ -1181,9 +1183,10 @@ def main():
         # Update-time forwards must re-inject the SAME vector as rollout time
         # (the FEED vector) — grpo_update_microbatched uses these only for the
         # Karvonen hook, never as a reward target. == all_activations unless
-        # --feed-col, so the default path is unchanged.
+        # --feed-col, so the default path is unchanged. (The reward gold stays
+        # all_activations, already consumed by compute_cnla_advantages above.)
         upd_feeds = [all_feeds[i] for i in keep]
-        upd_adv = adv.index_select(0, torch.tensor(keep, device=device))
+        upd_adv = [adv_tokens[i] for i in keep]   # per-token (per-bullet-span) advantages
         actor.train()
         mean_loss_val, grad_norm_val, grpo_metrics = grpo_update_microbatched(
             actor, optim, tokenizer,
@@ -1298,10 +1301,9 @@ def main():
         # FVE on valid (non-extraction-failed) samples — gives an
         # interpretable curve in wandb that maps to paper's reported numbers.
         # Use valid rewards only so extraction failures don't bias FVE down.
-        fve = (
-            1.0 - (-float(np.mean(valid_rewards))) / fve_baseline
-            if valid_rewards else float("nan")
-        )
+        # CNLA: `rewards`/valid_rewards already hold the composite reconstruction
+        # FVE (fve_full per rollout), so the logged FVE is their mean directly.
+        fve = float(np.mean(valid_rewards)) if valid_rewards else float("nan")
         # wandb x-axis is `step` (passed to wandb.log below) — do NOT also log
         # "step" as a metric, or it shows up as a useless step-vs-step chart.
         # Two model-named groups (av_, ar_) + a reward_ group; headline numbers
@@ -1471,16 +1473,15 @@ def main():
                     f" | {log['time/eval_text_judges_s']:.0f}s",
                     flush=True,
                 )
-            # Print 3 sample explanations so the log itself shows how outputs
-            # evolve. Pick indices 0, 7, 14 — spread across the eval set.
-            for _ei in (0, 7, 14):
-                if _ei < len(eval_records):
-                    _r = eval_records[_ei]
-                    _expl = _r["explanation"][:200].replace("\n", " ")
-                    print(
-                        f"    [eval@{step} idx={_ei} r={_r['reward']:.3f}] {_expl}",
-                        flush=True,
-                    )
+            # Log the ACTUAL eval rollouts in FULL (newlines preserved so the 4 bullets
+            # show on separate lines) so the stdout/wandb log shows how readouts evolve.
+            _n_show = min(int(getattr(args, "eval_log_rollouts", 8)), len(eval_records))
+            for _ei in range(_n_show):
+                _r = eval_records[_ei]
+                print(f"    [eval@{step} idx={_ei} r={_r['reward']:.3f} "
+                      f"fve={_r['fve']:.2f}] readout:", flush=True)
+                for _ln in str(_r["explanation"]).split("\n"):
+                    print(f"        {_ln}", flush=True)
 
         if not args.no_wandb:
             wandb.log(log, step=step)
