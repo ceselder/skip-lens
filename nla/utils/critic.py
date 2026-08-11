@@ -32,4 +32,18 @@ def critic_predict(critic, input_ids, attention_mask, mse_scale_f):
     # keep its matmul fp32 even when the caller runs the backbone under a bf16
     # autocast (fp32 full-FT mode) — autocast would silently demote it.
     with torch.autocast(device_type=last_h_norm.device.type, enabled=False):
-        return critic.value_head(last_h_norm.to(critic.value_head.weight.dtype)).float()
+        return critic.value_head(last_h_norm.to(next(critic.value_head.parameters()).dtype)).float()
+
+
+def critic_predict_all(critic, input_ids, attention_mask, mse_scale_f):
+    """Same as critic_predict but returns the value-head prediction at EVERY position:
+    [B, T, d_model] fp32. Used for the dense ('reconstruct-at-every-index') AR objective —
+    every causal prefix is trained to emit the target activation, so no single read anchor
+    is privileged. normalize→value_head mirrors critic_predict exactly per position."""
+    cout = critic(input_ids=input_ids, attention_mask=attention_mask)
+    h = cout.backbone_last_hidden.float()                # [B, T, D]
+    B, T, D = h.shape
+    h_norm = normalize_activation(h.reshape(B * T, D), mse_scale_f).reshape(B, T, D)
+    with torch.autocast(device_type=h_norm.device.type, enabled=False):
+        pred = critic.value_head(h_norm.to(next(critic.value_head.parameters()).dtype)).float()
+    return pred                                          # [B, T, D]

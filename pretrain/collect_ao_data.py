@@ -58,6 +58,10 @@ def main():
     ap.add_argument("--doc-offset", type=int, default=0,
                     help="skip the first N corpus docs (for sharded parallel collection: "
                          "shard i uses --doc-offset i*n_docs --n-docs n_docs, non-overlapping)")
+    ap.add_argument("--doc-indices-file", default=None,
+                    help="explicit corpus row indices (whitespace-separated) to collect, "
+                         "overriding --doc-offset/--n-docs. doc_id = d<true corpus index>, so a "
+                         "held-out set (complement of a prior collect) stays provably disjoint.")
     ap.add_argument("--positions-per-doc", type=int, default=5)
     ap.add_argument("--rollouts", type=int, default=16)   # "a ton" — dense sample of what comes next
     ap.add_argument("--rollout-len", type=int, default=8)  # SHORT — the concept within the next 4-8 tokens
@@ -101,22 +105,38 @@ def main():
             lambda m, i, o: grab2.__setitem__("h", (o[0] if isinstance(o, tuple) else o).detach()))
         print(f"[agreement] J_L{args.agree_layer}->L{args.target_layer} + tuned lens loaded", flush=True)
 
-    need = args.doc_offset + args.n_docs
-    if os.path.exists(args.corpus):
+    if args.doc_indices_file:
+        # explicit held-out corpus rows (guaranteed disjoint from a prior collect);
+        # doc_id keeps the TRUE corpus index so provenance/overlap stays checkable.
+        sel = [int(x) for x in open(args.doc_indices_file).read().split()]
         pf = pq.ParquetFile(args.corpus)
-        texts = []
+        all_texts, need = [], max(sel) + 1
         for rg in range(pf.num_row_groups):
-            texts.extend(pf.read_row_group(rg, columns=["text"]).column("text").to_pylist())
-            if len(texts) >= need:
+            all_texts.extend(pf.read_row_group(rg, columns=["text"]).column("text").to_pylist())
+            if len(all_texts) >= need:
                 break
-        texts = texts[args.doc_offset:need]
+        texts = [all_texts[i] for i in sel]
+        doc_true_ids = list(sel)
     else:
-        from datasets import load_dataset
-        stream = load_dataset(args.corpus, args.corpus_config, split="train", streaming=True)
-        rows = itertools.islice(stream, args.doc_offset, need)
-        texts = [row["text"] for row in rows]
-    # This shard's non-overlapping slice.
-    texts = [t for t in texts if t and len(t) > 120]
+        need = args.doc_offset + args.n_docs
+        if os.path.exists(args.corpus):
+            pf = pq.ParquetFile(args.corpus)
+            texts = []
+            for rg in range(pf.num_row_groups):
+                texts.extend(pf.read_row_group(rg, columns=["text"]).column("text").to_pylist())
+                if len(texts) >= need:
+                    break
+            texts = texts[args.doc_offset:need]
+        else:
+            from datasets import load_dataset
+            stream = load_dataset(args.corpus, args.corpus_config, split="train", streaming=True)
+            rows = itertools.islice(stream, args.doc_offset, need)
+            texts = [row["text"] for row in rows]
+        doc_true_ids = [args.doc_offset + i for i in range(len(texts))]
+    # This shard's non-overlapping slice; keep doc ids aligned through the length filter.
+    _pairs = [(tid, t) for tid, t in zip(doc_true_ids, texts) if t and len(t) > 120]
+    doc_true_ids = [p[0] for p in _pairs]
+    texts = [p[1] for p in _pairs]
     prompt_msgs = [{"role": "user", "content": ACTOR_TEMPLATE.format(injection_char=INJECT_PLACEHOLDER)}]
 
     acts = {l: [] for l in LAYERS}
@@ -258,7 +278,7 @@ def main():
             continuation_ids.append(
                 ids[0, p + 1:p + 1 + args.rollout_len]
                 .detach().cpu().to(torch.int32).tolist())
-            prompts.append(prompt_msgs); docids.append(f"d{args.doc_offset + di}")
+            prompts.append(prompt_msgs); docids.append(f"d{doc_true_ids[di]}")
             ents.append(pos_ent.get(p, float("nan")))
         if di % 100 == 0:
             print(f"doc {di}/{len(texts)} examples={len(rolls)}", flush=True)

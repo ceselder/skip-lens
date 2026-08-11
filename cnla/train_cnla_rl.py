@@ -73,7 +73,7 @@ from cnla.reward import Whitener
 
 
 
-def load_rl_dataset(parquet_path, n_max=None, exclude_doc_pred=None):
+def load_rl_dataset(parquet_path, n_max=None, exclude_doc_pred=None, feed_col=None):
     """Streaming + vectorized load — reads only the columns/rows we need, and keeps
     activations as numpy float32 (zero-copy from arrow), NEVER python floats.
 
@@ -85,10 +85,16 @@ def load_rl_dataset(parquet_path, n_max=None, exclude_doc_pred=None):
     exclude_doc_pred: optional doc_id -> bool; rows whose doc matches are DROPPED
     (the auto-split's held-out val docs — see nla/val_split.py). n_max counts
     kept rows.
+
+    feed_col: optional extra list<float> column loaded as row["feed"] — the
+    INJECTED vector (skip-lens: feed e.g. L42 while activation_vector stays the
+    reward/eval gold). None (default) => row["feed"] aliases row["activation"]
+    (same numpy array), so downstream code is uniform and numerics unchanged.
     """
     import pyarrow.parquet as pq_inner
     pf = pq_inner.ParquetFile(parquet_path)
-    cols = ["prompt", "activation_vector"] + (["doc_id"] if exclude_doc_pred else [])
+    cols = (["prompt", "activation_vector"] + ([feed_col] if feed_col else [])
+            + (["doc_id"] if exclude_doc_pred else []))
     rows = []
     for rg_idx in range(pf.num_row_groups):
         if n_max is not None and len(rows) >= n_max:
@@ -103,16 +109,21 @@ def load_rl_dataset(parquet_path, n_max=None, exclude_doc_pred=None):
         # .flatten() respects the slice offsets; np.asarray is zero-copy.
         col = rg.column("activation_vector").combine_chunks()
         acts = np.asarray(col.flatten(), dtype=np.float32).reshape(len(prompts), -1)
+        if feed_col:
+            fcol = rg.column(feed_col).combine_chunks()
+            feed_acts = np.asarray(fcol.flatten(), dtype=np.float32).reshape(len(prompts), -1)
+        else:
+            feed_acts = acts   # feed == target: alias, default behavior unchanged
         if exclude_doc_pred is not None:
             dids = rg.column("doc_id").to_pylist()
             for i, p in enumerate(prompts):
                 if n_max is not None and len(rows) >= n_max:
                     break
                 if not exclude_doc_pred(dids[i]):
-                    rows.append({"prompt": p, "activation": acts[i]})
+                    rows.append({"prompt": p, "activation": acts[i], "feed": feed_acts[i]})
         else:
             for i, p in enumerate(prompts):
-                rows.append({"prompt": p, "activation": acts[i]})
+                rows.append({"prompt": p, "activation": acts[i], "feed": feed_acts[i]})
     return rows
 
 
@@ -405,6 +416,11 @@ def main():
     p.add_argument("--device-map", choices=["single", "auto"], default="single")
     p.add_argument("--max-gpu-mem", type=int, default=0)
     p.add_argument("--rl-parquet", required=True)
+    p.add_argument("--feed-col", default=None,
+                   help="Skip-lens: parquet column to use as the INJECTED "
+                        "activation (e.g. act_L42) while the reward gold, eval "
+                        "gold and FVE baseline stay activation_vector. Default "
+                        "None = inject the target itself (behavior unchanged).")
     p.add_argument("--sidecar", required=True)
     p.add_argument("--whitener", required=True,
                    help="reward whitener .pt (cnla.fit_whitener): per-dim mean/std "
@@ -450,6 +466,20 @@ def main():
                         "signal (see the vLLM twin). 0 disables.")
     p.add_argument("--length-threshold", type=int, default=0,
                    help="Hinge point. 0 (default) => max_new_tokens - 64.")
+    p.add_argument("--loo-threshold", type=float, default=None,
+                   help="CNLA: absolute per-bullet LOO-FVE threshold. Unset "
+                        "(default) = raw marginals, behavior unchanged. Set: "
+                        "per-bullet reward becomes clamp(marginal - threshold, "
+                        "max=0) — only redundant bullets (marginal below the "
+                        "threshold) get a negative signal; bullets at/above it "
+                        "get 0, so already-good bullets are not over-optimized "
+                        "(prevents the KL blowup).")
+    p.add_argument("--missing-bullet-penalty", type=float, default=0.0,
+                   help="CNLA: per-rollout scalar missing_bullet_penalty * "
+                        "(4 - n_valid_bullets), ADDED to that rollout's bullet "
+                        "rewards BEFORE the GRPO group baseline. Pass a NEGATIVE "
+                        "value to penalize truncating to <4 bullets. 0.0 "
+                        "(default) disables (behavior unchanged).")
     p.add_argument("--gradient-checkpointing", action="store_true", default=False,
                    help="Recompute activations during backward (saves ~50% "
                         "activation memory at ~30%% compute cost). Off by "
@@ -552,6 +582,16 @@ def main():
         import shutil as _sh
         _sh.copy2(_side_src, _side_dst)
 
+    # Skip-lens fail-fast: the feed column must exist BEFORE any model loading.
+    if args.feed_col:
+        import pyarrow.parquet as _pq_ff
+        _pnames = _pq_ff.ParquetFile(args.rl_parquet).schema_arrow.names
+        assert args.feed_col in _pnames, (
+            f"--feed-col {args.feed_col!r} not found in {args.rl_parquet} "
+            f"(columns: {_pnames})"
+        )
+        print(f"[skip-lens] injecting column {args.feed_col!r}; reward/eval gold "
+              f"stays 'activation_vector'.", flush=True)
 
     _bad_evals = [e for e in args.evals if e not in KNOWN_EVALS]
     assert not _bad_evals, f"--evals: unknown {_bad_evals}; choices are {list(KNOWN_EVALS)}"
@@ -573,6 +613,8 @@ def main():
         args.length_threshold = max(1, args.max_new_tokens - 64)
     print(f"[len] hinged penalty {args.length_penalty}/token past "
           f"{args.length_threshold} tokens (cap {args.max_new_tokens})", flush=True)
+    print(f"[cnla-reward] loo_threshold={args.loo_threshold} "
+          f"missing_bullet_penalty={args.missing_bullet_penalty}", flush=True)
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -808,7 +850,7 @@ def main():
     from nla.val_split import is_val_doc
     _val_pred = (lambda d: is_val_doc(d, val_permille)) if val_permille else None
     rows = load_rl_dataset(args.rl_parquet, n_max=args.max_rows,
-                           exclude_doc_pred=_val_pred)
+                           exclude_doc_pred=_val_pred, feed_col=args.feed_col)
     print(f"[data] {len(rows)} rows", flush=True)
 
     # ---- FVE baseline: predict-the-mean MSE on this dataset ----
@@ -922,18 +964,23 @@ def main():
             _tj_cols = (["detokenized_text_truncated"]
                         if "detokenized_text_truncated" in _pf.schema_arrow.names else [])
             _rg = _pf.read_row_group(
-                _rg_idx, columns=["prompt", "activation_vector", "doc_id"] + _tj_cols)
+                _rg_idx, columns=["prompt", "activation_vector", "doc_id"] + _tj_cols
+                + ([args.feed_col] if args.feed_col else []))
             _prompts = _rg.column("prompt").to_pylist()
             _acts = np.asarray(
                 _rg.column("activation_vector").combine_chunks().flatten(),
                 dtype=np.float32).reshape(len(_prompts), -1)
+            _feeds = (np.asarray(
+                _rg.column(args.feed_col).combine_chunks().flatten(),
+                dtype=np.float32).reshape(len(_prompts), -1)
+                if args.feed_col else _acts)
             _dids = _rg.column("doc_id").to_pylist()
             _srcs = (_rg.column("detokenized_text_truncated").to_pylist()
                      if _tj_cols else [""] * len(_prompts))
             for _i, _d in enumerate(_dids):
                 if is_val_doc(_d, val_permille):
                     eval_rows.append({"prompt": _prompts[_i], "activation": _acts[_i],
-                                      "source": _srcs[_i] or ""})
+                                      "feed": _feeds[_i], "source": _srcs[_i] or ""})
                     if len(eval_rows) >= args.eval_n_prompts:
                         break
         print(f"[eval] {len(eval_rows)} held-out-doc prompts loaded "
@@ -961,7 +1008,8 @@ def main():
             _rg = _pf.read_row_group(
                 _rg_idx, columns=["prompt", "activation_vector", "doc_id"]
                 + (["detokenized_text_truncated"]
-                   if "detokenized_text_truncated" in _pf.schema_arrow.names else []),
+                   if "detokenized_text_truncated" in _pf.schema_arrow.names else [])
+                + ([args.feed_col] if args.feed_col else []),
             )
             _n = _rg.num_rows
             if _seen + _n <= args.eval_skip_rows:
@@ -970,6 +1018,8 @@ def main():
             _start = max(0, args.eval_skip_rows - _seen)
             _prompts = _rg.column("prompt").to_pylist()
             _acts = _rg.column("activation_vector").to_pylist()
+            _feeds = (_rg.column(args.feed_col).to_pylist()
+                      if args.feed_col else _acts)
             _dids = _rg.column("doc_id").to_pylist()
             _srcs = (_rg.column("detokenized_text_truncated").to_pylist()
                      if "detokenized_text_truncated" in _rg.schema.names else [""] * _n)
@@ -977,7 +1027,7 @@ def main():
                 if _dids[_i] in _train_doc_ids:
                     continue
                 eval_rows.append({"prompt": _prompts[_i], "activation": _acts[_i],
-                                  "source": _srcs[_i] or ""})
+                                  "feed": _feeds[_i], "source": _srcs[_i] or ""})
                 if len(eval_rows) >= args.eval_n_prompts:
                     break
             _seen += _n
@@ -1025,6 +1075,7 @@ def main():
         all_full_ids = []
         all_prompt_lens = []
         all_activations = []
+        all_feeds = []  # injected vectors (== all_activations unless --feed-col)
         all_explanations = []
         all_response_text = []
         all_prompt_group = []
@@ -1033,8 +1084,11 @@ def main():
             row = rows[row_idx]
             prompt_text = build_prompt_text(row["prompt"], inject_char, tokenizer)
             activation = torch.tensor(row["activation"], dtype=torch.float32)
+            # Skip-lens: INJECT the feed vector (== activation unless --feed-col);
+            # `activation` stays the reward/eval GOLD target.
+            feed = torch.tensor(row["feed"], dtype=torch.float32)
             responses = rollout_one_prompt(
-                actor, tokenizer, prompt_text, activation, vectors_ref,
+                actor, tokenizer, prompt_text, feed, vectors_ref,
                 inj_id, args.group_size, args.max_new_tokens, args.temperature, device,
                 eos_ids=eos_ids,
             )
@@ -1043,6 +1097,7 @@ def main():
                 all_full_ids.append(r["full_ids"])
                 all_prompt_lens.append(r["prompt_len"])
                 all_activations.append(activation)
+                all_feeds.append(feed)
                 all_explanations.append(expl)
                 all_response_text.append(r["text"])
                 all_prompt_group.append(gi)
@@ -1096,6 +1151,8 @@ def main():
             critic=critic, tokenizer=tokenizer, whitener=whitener,
             ar_template=template, mse_scale_f=mse_scale_f, device=device,
             d_model=cfg.d_model, batch_prompts=args.batch_prompts,
+            loo_threshold=args.loo_threshold,
+            missing_bullet_penalty=args.missing_bullet_penalty,
         )
         # zero the advantage on injection-failed rollouts (also dropped via `keep`)
         for i, ok in enumerate(inject_ok):
@@ -1123,12 +1180,17 @@ def main():
             continue
         upd_full_ids = [all_full_ids[i] for i in keep]
         upd_prompt_lens = [all_prompt_lens[i] for i in keep]
-        upd_activations = [all_activations[i] for i in keep]
+        # Update-time forwards must re-inject the SAME vector as rollout time
+        # (the FEED vector) — grpo_update_microbatched uses these only for the
+        # Karvonen hook, never as a reward target. == all_activations unless
+        # --feed-col, so the default path is unchanged. (The reward gold stays
+        # all_activations, already consumed by compute_cnla_advantages above.)
+        upd_feeds = [all_feeds[i] for i in keep]
         upd_adv = [adv_tokens[i] for i in keep]   # per-token (per-bullet-span) advantages
         actor.train()
         mean_loss_val, grad_norm_val, grpo_metrics = grpo_update_microbatched(
             actor, optim, tokenizer,
-            upd_full_ids, upd_prompt_lens, upd_activations,
+            upd_full_ids, upd_prompt_lens, upd_feeds,
             upd_adv, vectors_ref, device,
             micro_batch=args.logp_micro_batch,
             kl_beta=args.kl_beta,
@@ -1293,13 +1355,16 @@ def main():
                 for r in eval_rows
             ]
             _eval_acts = [torch.tensor(r["activation"], dtype=torch.float32) for r in eval_rows]
+            # Generation INJECTS the feed vector; the scoring gold below stays
+            # _eval_acts (== feeds unless --feed-col).
+            _eval_feeds = [torch.tensor(r["feed"], dtype=torch.float32) for r in eval_rows]
             _all_resp = []
             _orig_pad = tokenizer.padding_side
             tokenizer.padding_side = "left"  # generation: left-pad so completions align
             try:
                 for _c0 in range(0, len(_eval_prompts), args.eval_gen_batch):
                     _cp = _eval_prompts[_c0:_c0 + args.eval_gen_batch]
-                    _ca = _eval_acts[_c0:_c0 + args.eval_gen_batch]
+                    _ca = _eval_feeds[_c0:_c0 + args.eval_gen_batch]
                     _enc = tokenizer(
                         _cp, return_tensors="pt", padding=True, add_special_tokens=False,
                     ).to(device)
@@ -1408,16 +1473,15 @@ def main():
                     f" | {log['time/eval_text_judges_s']:.0f}s",
                     flush=True,
                 )
-            # Print 3 sample explanations so the log itself shows how outputs
-            # evolve. Pick indices 0, 7, 14 — spread across the eval set.
-            for _ei in (0, 7, 14):
-                if _ei < len(eval_records):
-                    _r = eval_records[_ei]
-                    _expl = _r["explanation"][:200].replace("\n", " ")
-                    print(
-                        f"    [eval@{step} idx={_ei} r={_r['reward']:.3f}] {_expl}",
-                        flush=True,
-                    )
+            # Log the ACTUAL eval rollouts in FULL (newlines preserved so the 4 bullets
+            # show on separate lines) so the stdout/wandb log shows how readouts evolve.
+            _n_show = min(int(getattr(args, "eval_log_rollouts", 8)), len(eval_records))
+            for _ei in range(_n_show):
+                _r = eval_records[_ei]
+                print(f"    [eval@{step} idx={_ei} r={_r['reward']:.3f} "
+                      f"fve={_r['fve']:.2f}] readout:", flush=True)
+                for _ln in str(_r["explanation"]).split("\n"):
+                    print(f"        {_ln}", flush=True)
 
         if not args.no_wandb:
             wandb.log(log, step=step)

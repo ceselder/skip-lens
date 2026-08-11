@@ -70,7 +70,7 @@ from nla.train_sft import _resolve_device_map, init_critic_from_base
 
 
 
-def load_rl_dataset(parquet_path, n_max=None, exclude_doc_pred=None):
+def load_rl_dataset(parquet_path, n_max=None, exclude_doc_pred=None, feed_col=None):
     """Streaming + vectorized load — reads only the columns/rows we need, and keeps
     activations as numpy float32 (zero-copy from arrow), NEVER python floats.
 
@@ -82,10 +82,16 @@ def load_rl_dataset(parquet_path, n_max=None, exclude_doc_pred=None):
     exclude_doc_pred: optional doc_id -> bool; rows whose doc matches are DROPPED
     (the auto-split's held-out val docs — see nla/val_split.py). n_max counts
     kept rows.
+
+    feed_col: optional extra list<float> column loaded as row["feed"] — the
+    INJECTED vector (skip-lens: feed e.g. L42 while activation_vector stays the
+    reward/eval gold). None (default) => row["feed"] aliases row["activation"]
+    (same numpy array), so downstream code is uniform and numerics unchanged.
     """
     import pyarrow.parquet as pq_inner
     pf = pq_inner.ParquetFile(parquet_path)
-    cols = ["prompt", "activation_vector"] + (["doc_id"] if exclude_doc_pred else [])
+    cols = (["prompt", "activation_vector"] + ([feed_col] if feed_col else [])
+            + (["doc_id"] if exclude_doc_pred else []))
     rows = []
     for rg_idx in range(pf.num_row_groups):
         if n_max is not None and len(rows) >= n_max:
@@ -100,16 +106,21 @@ def load_rl_dataset(parquet_path, n_max=None, exclude_doc_pred=None):
         # .flatten() respects the slice offsets; np.asarray is zero-copy.
         col = rg.column("activation_vector").combine_chunks()
         acts = np.asarray(col.flatten(), dtype=np.float32).reshape(len(prompts), -1)
+        if feed_col:
+            fcol = rg.column(feed_col).combine_chunks()
+            feed_acts = np.asarray(fcol.flatten(), dtype=np.float32).reshape(len(prompts), -1)
+        else:
+            feed_acts = acts   # feed == target: alias, default behavior unchanged
         if exclude_doc_pred is not None:
             dids = rg.column("doc_id").to_pylist()
             for i, p in enumerate(prompts):
                 if n_max is not None and len(rows) >= n_max:
                     break
                 if not exclude_doc_pred(dids[i]):
-                    rows.append({"prompt": p, "activation": acts[i]})
+                    rows.append({"prompt": p, "activation": acts[i], "feed": feed_acts[i]})
         else:
             for i, p in enumerate(prompts):
-                rows.append({"prompt": p, "activation": acts[i]})
+                rows.append({"prompt": p, "activation": acts[i], "feed": feed_acts[i]})
     return rows
 
 
@@ -398,6 +409,11 @@ def main():
     p.add_argument("--device-map", choices=["single", "auto"], default="single")
     p.add_argument("--max-gpu-mem", type=int, default=0)
     p.add_argument("--rl-parquet", required=True)
+    p.add_argument("--feed-col", default=None,
+                   help="Skip-lens: parquet column to use as the INJECTED "
+                        "activation (e.g. act_L42) while the reward gold, eval "
+                        "gold and FVE baseline stay activation_vector. Default "
+                        "None = inject the target itself (behavior unchanged).")
     p.add_argument("--sidecar", required=True)
     p.add_argument("--save-dir", required=True)
     p.add_argument("--num-steps", type=int, default=200)
@@ -542,6 +558,16 @@ def main():
         import shutil as _sh
         _sh.copy2(_side_src, _side_dst)
 
+    # Skip-lens fail-fast: the feed column must exist BEFORE any model loading.
+    if args.feed_col:
+        import pyarrow.parquet as _pq_ff
+        _pnames = _pq_ff.ParquetFile(args.rl_parquet).schema_arrow.names
+        assert args.feed_col in _pnames, (
+            f"--feed-col {args.feed_col!r} not found in {args.rl_parquet} "
+            f"(columns: {_pnames})"
+        )
+        print(f"[skip-lens] injecting column {args.feed_col!r}; reward/eval gold "
+              f"stays 'activation_vector'.", flush=True)
 
     _bad_evals = [e for e in args.evals if e not in KNOWN_EVALS]
     assert not _bad_evals, f"--evals: unknown {_bad_evals}; choices are {list(KNOWN_EVALS)}"
@@ -796,7 +822,7 @@ def main():
     from nla.val_split import is_val_doc
     _val_pred = (lambda d: is_val_doc(d, val_permille)) if val_permille else None
     rows = load_rl_dataset(args.rl_parquet, n_max=args.max_rows,
-                           exclude_doc_pred=_val_pred)
+                           exclude_doc_pred=_val_pred, feed_col=args.feed_col)
     print(f"[data] {len(rows)} rows", flush=True)
 
     # ---- FVE baseline: predict-the-mean MSE on this dataset ----
@@ -910,18 +936,23 @@ def main():
             _tj_cols = (["detokenized_text_truncated"]
                         if "detokenized_text_truncated" in _pf.schema_arrow.names else [])
             _rg = _pf.read_row_group(
-                _rg_idx, columns=["prompt", "activation_vector", "doc_id"] + _tj_cols)
+                _rg_idx, columns=["prompt", "activation_vector", "doc_id"] + _tj_cols
+                + ([args.feed_col] if args.feed_col else []))
             _prompts = _rg.column("prompt").to_pylist()
             _acts = np.asarray(
                 _rg.column("activation_vector").combine_chunks().flatten(),
                 dtype=np.float32).reshape(len(_prompts), -1)
+            _feeds = (np.asarray(
+                _rg.column(args.feed_col).combine_chunks().flatten(),
+                dtype=np.float32).reshape(len(_prompts), -1)
+                if args.feed_col else _acts)
             _dids = _rg.column("doc_id").to_pylist()
             _srcs = (_rg.column("detokenized_text_truncated").to_pylist()
                      if _tj_cols else [""] * len(_prompts))
             for _i, _d in enumerate(_dids):
                 if is_val_doc(_d, val_permille):
                     eval_rows.append({"prompt": _prompts[_i], "activation": _acts[_i],
-                                      "source": _srcs[_i] or ""})
+                                      "feed": _feeds[_i], "source": _srcs[_i] or ""})
                     if len(eval_rows) >= args.eval_n_prompts:
                         break
         print(f"[eval] {len(eval_rows)} held-out-doc prompts loaded "
@@ -949,7 +980,8 @@ def main():
             _rg = _pf.read_row_group(
                 _rg_idx, columns=["prompt", "activation_vector", "doc_id"]
                 + (["detokenized_text_truncated"]
-                   if "detokenized_text_truncated" in _pf.schema_arrow.names else []),
+                   if "detokenized_text_truncated" in _pf.schema_arrow.names else [])
+                + ([args.feed_col] if args.feed_col else []),
             )
             _n = _rg.num_rows
             if _seen + _n <= args.eval_skip_rows:
@@ -958,6 +990,8 @@ def main():
             _start = max(0, args.eval_skip_rows - _seen)
             _prompts = _rg.column("prompt").to_pylist()
             _acts = _rg.column("activation_vector").to_pylist()
+            _feeds = (_rg.column(args.feed_col).to_pylist()
+                      if args.feed_col else _acts)
             _dids = _rg.column("doc_id").to_pylist()
             _srcs = (_rg.column("detokenized_text_truncated").to_pylist()
                      if "detokenized_text_truncated" in _rg.schema.names else [""] * _n)
@@ -965,7 +999,7 @@ def main():
                 if _dids[_i] in _train_doc_ids:
                     continue
                 eval_rows.append({"prompt": _prompts[_i], "activation": _acts[_i],
-                                  "source": _srcs[_i] or ""})
+                                  "feed": _feeds[_i], "source": _srcs[_i] or ""})
                 if len(eval_rows) >= args.eval_n_prompts:
                     break
             _seen += _n
@@ -1013,6 +1047,7 @@ def main():
         all_full_ids = []
         all_prompt_lens = []
         all_activations = []
+        all_feeds = []  # injected vectors (== all_activations unless --feed-col)
         all_explanations = []
         all_response_text = []
         all_prompt_group = []
@@ -1021,8 +1056,11 @@ def main():
             row = rows[row_idx]
             prompt_text = build_prompt_text(row["prompt"], inject_char, tokenizer)
             activation = torch.tensor(row["activation"], dtype=torch.float32)
+            # Skip-lens: INJECT the feed vector (== activation unless --feed-col);
+            # `activation` stays the reward/eval GOLD target.
+            feed = torch.tensor(row["feed"], dtype=torch.float32)
             responses = rollout_one_prompt(
-                actor, tokenizer, prompt_text, activation, vectors_ref,
+                actor, tokenizer, prompt_text, feed, vectors_ref,
                 inj_id, args.group_size, args.max_new_tokens, args.temperature, device,
                 eos_ids=eos_ids,
             )
@@ -1031,6 +1069,7 @@ def main():
                 all_full_ids.append(r["full_ids"])
                 all_prompt_lens.append(r["prompt_len"])
                 all_activations.append(activation)
+                all_feeds.append(feed)
                 all_explanations.append(expl)
                 all_response_text.append(r["text"])
                 all_prompt_group.append(gi)
@@ -1139,12 +1178,16 @@ def main():
             continue
         upd_full_ids = [all_full_ids[i] for i in keep]
         upd_prompt_lens = [all_prompt_lens[i] for i in keep]
-        upd_activations = [all_activations[i] for i in keep]
+        # Update-time forwards must re-inject the SAME vector as rollout time
+        # (the FEED vector) — grpo_update_microbatched uses these only for the
+        # Karvonen hook, never as a reward target. == all_activations unless
+        # --feed-col, so the default path is unchanged.
+        upd_feeds = [all_feeds[i] for i in keep]
         upd_adv = adv.index_select(0, torch.tensor(keep, device=device))
         actor.train()
         mean_loss_val, grad_norm_val, grpo_metrics = grpo_update_microbatched(
             actor, optim, tokenizer,
-            upd_full_ids, upd_prompt_lens, upd_activations,
+            upd_full_ids, upd_prompt_lens, upd_feeds,
             upd_adv, vectors_ref, device,
             micro_batch=args.logp_micro_batch,
             kl_beta=args.kl_beta,
@@ -1310,13 +1353,16 @@ def main():
                 for r in eval_rows
             ]
             _eval_acts = [torch.tensor(r["activation"], dtype=torch.float32) for r in eval_rows]
+            # Generation INJECTS the feed vector; the scoring gold below stays
+            # _eval_acts (== feeds unless --feed-col).
+            _eval_feeds = [torch.tensor(r["feed"], dtype=torch.float32) for r in eval_rows]
             _all_resp = []
             _orig_pad = tokenizer.padding_side
             tokenizer.padding_side = "left"  # generation: left-pad so completions align
             try:
                 for _c0 in range(0, len(_eval_prompts), args.eval_gen_batch):
                     _cp = _eval_prompts[_c0:_c0 + args.eval_gen_batch]
-                    _ca = _eval_acts[_c0:_c0 + args.eval_gen_batch]
+                    _ca = _eval_feeds[_c0:_c0 + args.eval_gen_batch]
                     _enc = tokenizer(
                         _cp, return_tensors="pt", padding=True, add_special_tokens=False,
                     ).to(device)

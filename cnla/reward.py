@@ -106,6 +106,7 @@ def loo_fve_rewards(
     target: torch.Tensor,
     whitener: Whitener,
     valid: torch.Tensor | None = None,
+    threshold: float | None = None,
 ):
     """Leave-one-out FVE per-bullet rewards.
 
@@ -116,9 +117,18 @@ def loo_fve_rewards(
       valid:  [B, K] bool — False marks a missing/unparsable bullet (e.g. the policy
               emitted <K bullets). Invalid bullets are dropped from every composition
               and get reward 0.
+      threshold: optional ABSOLUTE per-bullet threshold on the LOO marginal.
+              None (default): `r` is the raw marginal, exactly as before.
+              float: `r <- clamp(r - threshold, max=0)` — only bullets whose
+              marginal is BELOW the threshold carry (negative) signal, i.e.
+              redundant bullets are penalized; bullets at/above the threshold get
+              exactly 0 so already-good bullets are left alone (anti-KL-blowup).
+              The raw marginal is always returned in `r_raw`.
 
     Returns dict:
-      r:        [B, K] per-bullet marginal LOO-FVE reward (0 where not valid)
+      r:        [B, K] per-bullet reward consumed downstream: the marginal LOO-FVE,
+                thresholded iff `threshold` is set (0 where not valid)
+      r_raw:    [B, K] the raw (unthresholded) marginal — diagnostics/logging
       fve_full: [B]    FVE of the optimal composition of all valid bullets
       fve_loo:  [B, K] FVE leaving bullet i out (nan where not valid)
       coeff_full:[B, K] optimal α* for the full set (0 where not valid) — diagnostics
@@ -156,7 +166,15 @@ def loo_fve_rewards(
         r[:, i] = fve_full - fve_i
 
     r = r * valid.float()
-    return {"r": r, "fve_full": fve_full, "fve_loo": fve_loo, "coeff_full": coeff_full}
+    r_raw = r
+    if threshold is not None:
+        # Penalize ONLY below-threshold (redundant) bullets — negative signal;
+        # bullets at/above the threshold get exactly 0 (leave good bullets alone).
+        # Re-apply the valid mask: for invalid bullets r_raw==0, and
+        # clamp(0 - threshold, max=0) would be -threshold, not 0.
+        r = torch.clamp(r - threshold, max=0.0) * valid.float()
+    return {"r": r, "r_raw": r_raw, "fve_full": fve_full, "fve_loo": fve_loo,
+            "coeff_full": coeff_full}
 
 
 # --------------------------------------------------------------------------- #

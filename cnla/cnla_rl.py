@@ -77,6 +77,7 @@ def compute_cnla_advantages(
     *, full_ids, prompt_lens, activations, groups, response_texts,
     critic, tokenizer, whitener: Whitener, ar_template, mse_scale_f, device,
     d_model, batch_prompts, adv_clip=10.0,
+    loo_threshold: float | None = None, missing_bullet_penalty: float = 0.0,
 ):
     """Per-token advantages for every rollout + batch metrics.
 
@@ -86,6 +87,17 @@ def compute_cnla_advantages(
       activations[i]  : [d] the injected target activation for rollout i
       groups[i]       : int prompt-group id (rollouts of the same activation share it)
       response_texts  : decoded response (unused for spans; kept for logging)
+      loo_threshold   : passed to loo_fve_rewards(threshold=...). None (default)
+                        = raw LOO marginals, unchanged. float = per-bullet reward
+                        becomes clamp(marginal - threshold, max=0): only redundant
+                        (below-threshold) bullets get a negative signal.
+      missing_bullet_penalty : per-rollout scalar missing_bullet_penalty *
+                        (MAX_BULLETS - n_valid_bullets), ADDED to each of that
+                        rollout's valid-bullet rewards BEFORE the GRPO group
+                        baseline (so the baseline centers over penalized rewards
+                        and short rollouts land below full 4-bullet rollouts of
+                        the same group). Pass a NEGATIVE value to penalize
+                        truncation. 0.0 (default) = disabled, unchanged.
     Returns:
       adv_tokens : list[Tensor] — per rollout, a [n_resp] advantage aligned to
                    full_ids[i][p_len:] (0 outside any bullet span)
@@ -120,9 +132,24 @@ def compute_cnla_advantages(
     # 3. leave-one-out FVE per bullet
     target = torch.stack([torch.as_tensor(a, dtype=torch.float32, device=device)
                           for a in activations], dim=0)         # [B, d]
-    out = loo_fve_rewards(vecs, target, whitener, valid=vmask)
+    out = loo_fve_rewards(vecs, target, whitener, valid=vmask,
+                          threshold=loo_threshold)
     r = out["r"]                                                # [B, MAX_BULLETS]
     fve_full = out["fve_full"]                                  # [B]
+
+    # 3b. missing-bullet penalty: per-rollout scalar folded into every valid
+    # bullet's reward PRE-baseline. Each bullet-span token inherits its bullet's
+    # advantage, so this adds the penalty to every produced bullet token of the
+    # rollout before the group baseline is subtracted — the baseline then
+    # absorbs the group-mean penalty and only the RELATIVE bullet-count deficit
+    # drives signal. Sign is literal (value is ADDED): pass a NEGATIVE
+    # missing_bullet_penalty to discourage emitting <MAX_BULLETS bullets.
+    # Rollouts with 0 valid bullets have no spans to carry signal (unchanged).
+    pen_mean = 0.0
+    if missing_bullet_penalty != 0.0:
+        pen = missing_bullet_penalty * (MAX_BULLETS - vmask.sum(1).float())  # [B]
+        r = r + pen.unsqueeze(1) * vmask.float()
+        pen_mean = pen.mean().item()
 
     # 4. GRPO baseline over each prompt group's VALID bullets
     groups_t = torch.tensor(groups, dtype=torch.long, device=device)
@@ -160,6 +187,10 @@ def compute_cnla_advantages(
     metrics = {
         "cnla/fve_full_mean": fve_full.mean().item(),
         "cnla/marginal_mean": r[vmask].mean().item() if vmask.any() else 0.0,
+        # raw LOO marginal (pre-threshold, pre-penalty) — equals marginal_mean
+        # when both features are off
+        "cnla/marginal_raw_mean": out["r_raw"][vmask].mean().item() if vmask.any() else 0.0,
+        "cnla/missing_penalty_mean": pen_mean,
         "cnla/n_bullets_mean": n_bull.mean().item(),
         "cnla/frac_4bullets": (n_bull == MAX_BULLETS).float().mean().item(),
         "cnla/uniqueness_mean": float(sum(uniq) / max(1, len(uniq))),
