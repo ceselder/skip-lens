@@ -1,57 +1,47 @@
 import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt, json
 
-# Eval logs FVE indexed by d = distance-from-last-token (the read anchor). The template
-# suffix "</text> <summary>" is m=6 tokens, so the anchor sits 6 tokens PAST the span end.
-# => span tokens actually seen by the reader = clamp(16 + m - d, 0, 16) = clamp(22 - d, 0, 16).
-#   d=0..6  -> full 16-token span seen (reads walk the 6-token suffix): the flat ~30% cap.
-#   d=7..18 -> real truncation, 15 .. 4 span tokens.
-# max_dist=18 + a 6-token suffix means we NEVER measured below 4 span tokens. All held-out val.
-M = 6
-last_d = [31.2,25.2,-10.2,-14.2,-3.1,-17.2,-38.1,-37.0,-36.2,-36.1,-36.7,-36.2,-37.2,-37.6,-36.4,-37.2,-37.3,-39.4,-41.0]
-allx_d = [30.2,30.2,30.2,30.1,29.8,29.8,29.4,28.7,27.9,27.0,26.3,25.1,23.7,22.2,20.4,18.6,16.3,13.5, 9.9]
+# eval_truncres_fair.py, held-out doc-disjoint val (n=1000), L62. For each span length k,
+# wrap the first-k on-policy span tokens in the template and read at either:
+#   ANCHOR  = last prompt token (the <summary> read position both were... last-token WAS trained on)
+#   CONTENT = last CONTENT token (causal-identical to reading that token in the full prompt)
+# Both ARs trained on FIXED 16-token spans. Three curves tell the whole story:
+k = list(range(1, 17))
+last_anchor  = [-26.1,-7.4,2.0,8.4,13.1,16.5,19.3,21.3,23.4,25.1,26.4,27.7,28.6,29.6,30.6,31.1]
+last_content = [-57.4,-46.4,-42.4,-40.6,-39.6,-36.9,-36.9,-36.1,-37.4,-36.6,-35.9,-37.0,-36.7,-36.4,-35.9,-36.4]
+dense_content= [-17.5,-2.3,4.7,10.1,13.6,16.2,18.5,20.4,22.4,23.9,25.0,26.2,27.0,27.9,28.7,29.4]
+dense_anchor = [-24.0,-4.6,4.1,9.9,13.9,16.9,19.2,21.1,23.1,24.6,25.8,27.1,27.7,28.6,29.5,30.1]  # for json/reference
 
-# dense curve over span tokens actually seen (d>=M => reads land inside the span)
-seen, dense = [], []
-for d in range(len(allx_d)):
-    s = 16 + M - d
-    if 4 <= s <= 16:
-        seen.append(s); dense.append(allx_d[d])
-order = sorted(range(len(seen)), key=lambda i: seen[i])
-seen  = [seen[i]  for i in order]; dense = [dense[i] for i in order]
-
-# suffix-plateau reads (d=0..M): full span seen, anchor walking the 6-token suffix
-plat = [allx_d[d] for d in range(0, M+1)]           # ~30.2 .. 29.4
-
-fig,ax=plt.subplots(figsize=(8.8,5.2))
+fig,ax=plt.subplots(figsize=(9.0,5.4))
 ax.axhline(0,color="#b0a89c",lw=1)
-ax.plot(seen,dense,"-o",color="#1baf7a",lw=2.6,ms=6,label="dense --ar-all-idx (reads at every prefix; a real truncation test)")
-# suffix plateau (full span, reads through the 6-tok suffix)
-ax.plot([16]*len(plat),plat,marker="o",ms=4,color="#1baf7a",alpha=.35,ls="none")
-# last-token AR has exactly ONE valid read position: its trained anchor (= full span seen)
-ax.plot([16],[31.2],marker="*",ms=18,color="#c0562f",ls="none",
-        label="last-token AR (ONLY valid readout: its trained anchor = full span)")
+ax.plot(k,dense_content,"-o",color="#1baf7a",lw=2.5,ms=6,
+        label="dense --ar-all-idx, read @ content token")
+ax.plot(k,last_anchor,"-s",color="#2f6fc0",lw=2.3,ms=6,
+        label="last-token AR, read @ its anchor")
+ax.plot(k,last_content,"--D",color="#c0392f",lw=2.3,ms=6,
+        label="last-token AR, read @ content token")
 
-ax.axvspan(2.2,4,color="#d9d2c6",alpha=.35)
-ax.text(3.1,18,"below 4 tokens\nNOT measured\n(6-tok suffix +\nmax_dist=18)",fontsize=8,color="#6b6357",ha="center",va="center")
-ax.annotate("last-token AR = dense AR at full span (~31% vs ~30%);\n"
-            "it has NO defined readout at fewer tokens without\n"
-            "re-encoding a shortened prompt (fair truncation curve = TODO)",
-            (16,31.2),textcoords="offset points",xytext=(-14,-70),fontsize=8,color="#c0562f",ha="right",
-            arrowprops=dict(arrowstyle="->",color="#c0562f",lw=1.1))
+ax.annotate("read at a position it was NEVER trained on ->\nOOD: worse-than-mean at every k, even k=16\n(length in-distribution, only read position moved)",
+            (8,-36.1),textcoords="offset points",xytext=(20,34),fontsize=8.5,color="#c0392f",
+            arrowprops=dict(arrowstyle="->",color="#c0392f",lw=1.2))
+ax.annotate("read where it WAS trained -> fine;\ndense reads fine at BOTH positions",
+            (13,28.6),textcoords="offset points",xytext=(-6,-78),fontsize=8.5,color="#333",
+            arrowprops=dict(arrowstyle="->",color="#333",lw=1.1))
 
-ax.set_xlabel("span tokens actually seen by the reader  (corrected for the 6-token template suffix)")
+ax.set_xlabel("span tokens fed to the reader (k)   —   both ARs trained on fixed 16-token spans")
 ax.set_ylabel("L62 reconstruction FVE, norm-constrained (%)")
-ax.set_title("Dense reader is truncation-resistant: FVE rises ~concavely 4 tok (10%) -> 16 tok (30%), reads at ANY prefix.\n"
-             "Last-token AR matches it at full span but has only one valid read position. Held-out doc-disjoint val, span16 on-policy.",
-             fontsize=8.8,weight="bold")
-ax.set_ylim(0,40); ax.set_xlim(2.2,16.8); ax.set_xticks(range(4,17,2))
-ax.grid(alpha=0.25); ax.legend(frameon=False,loc="lower right",fontsize=8.5)
+ax.set_title("What --ar-all-idx actually buys is READ-POSITION robustness, not better reconstruction:\n"
+             "a last-token AR is fine at its trained anchor but OOD (worse-than-mean) at the content token;\n"
+             "the dense AR reads fine anywhere. Held-out doc-disjoint val, on-policy spans, L62.",
+             fontsize=9.0,weight="bold")
+ax.set_xlim(0.5,16.5); ax.set_ylim(-60,40); ax.set_xticks(range(2,17,2))
+ax.grid(alpha=0.25); ax.legend(frameon=False,loc="lower right",fontsize=9)
 for s in ("top","right"): ax.spines[s].set_visible(False)
 plt.tight_layout()
 plt.savefig("/home/celeste/skip-lens/scripts/truncres_span16.png",dpi=150,bbox_inches="tight")
 plt.savefig("/home/celeste/skip-lens/scripts/truncres_span16.pdf",bbox_inches="tight")
-json.dump({"span_tokens_seen":seen,"dense_all_idx_fve":dense,
-           "last_token_at_anchor_fve":31.2,"suffix_plateau_fve":plat,"suffix_tokens_m":M,
-           "note":"held-out doc-disjoint val; x=span tokens seen=clamp(22-d,0,16); <4 tokens unmeasured (6-tok suffix + max_dist=18); last-token AR only has a valid readout at its trained anchor (full span) -- reads at other positions are untrained and were dropped as meaningless"},
+json.dump({"span_tokens_k":k,"last_token_anchor":last_anchor,"last_token_content":last_content,
+           "dense_all_idx_content":dense_content,"dense_all_idx_anchor":dense_anchor,
+           "eval":"eval_truncres_fair.py held-out doc-disjoint val n=1000, L62",
+           "note":"both ARs trained on FIXED 16-tok spans. last-token @ content = read-position OOD (flat ~-37% even at k=16). dense fine at content AND anchor. length generalizes at anchor; read-position does NOT for last-token."},
           open("/home/celeste/skip-lens/scripts/truncres_span16.json","w"),indent=2)
-print("saved corrected truncres_span16 (span-tokens-seen axis, m=6)")
+print("saved 3-curve read-position-OOD truncres_span16")
