@@ -22,13 +22,13 @@ AV_C_VAL=/workspace/data/final/spanC_L62_val.parquet
 if [ ! -f "$AV_A" ]; then
   echo "=== finalize arm A (multi-slot JVP spans, K=8) ==="
   python pretrain/finalize_jvp_spans.py \
-    --shards-glob "/workspace/data/spans_jvp/shard_*_jvp.parquet" \
+    --shards-glob "/workspace/data/spans_jvp/shard_[0-3]_jvp.parquet" \
     --out-train "$AV_A" --out-val "$AV_A_VAL" --k-slots 8
 fi
 if [ ! -f "$AV_C" ]; then
   echo "=== finalize arm C (single-slot L62, 8-token spans) ==="
   python pretrain/finalize_span_data.py \
-    --shards-glob "/workspace/data/spans_raw/shard_*.parquet" \
+    --shards-glob "/workspace/data/spans_raw/shard_[0-3].parquet" \
     --meta /workspace/data/spans_raw/shard_0.parquet.meta.json \
     --out-train "$AV_C" --out-val "$AV_C_VAL" \
     --span-min 8 --span-max 8 --span-source rollout

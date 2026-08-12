@@ -206,7 +206,7 @@ def ar_debug_stats(pred, gold, mse_scale_f):
 
 @torch.no_grad()
 def av_generate_samples(model, tokenizer, rows, cfg, device, *,
-                        max_new_tokens=256, n_slots=1):
+                        max_new_tokens=256):
     """Generate explanations for a few fixed activations (AV debug table).
 
     Returns list of dicts: {idx, gen_len, explanation}.
@@ -224,8 +224,7 @@ def av_generate_samples(model, tokenizer, rows, cfg, device, *,
             msgs, tokenize=False, add_generation_prompt=True, enable_thinking=False)
         ids = tokenizer.encode(ptxt, add_special_tokens=False)
         pt = torch.tensor([ids], dtype=torch.long, device=device)
-        act = torch.tensor(row["activation_vector"], dtype=torch.float32)
-        act = act.view(n_slots, -1).to(device)  # n_slots=1 -> [1, d], unchanged
+        act = torch.tensor(row["activation_vector"], dtype=torch.float32).unsqueeze(0).to(device)
         if vref is not None:
             vref[0] = act
         try:
@@ -368,6 +367,23 @@ def init_critic_from_base(base_ckpt: str, num_layers: int, dtype, quant_config=N
     return critic
 
 
+def fresh_block_output_projs(block):
+    """(name, nn.Linear) for the residual-branch OUTPUT projections of one
+    decoder block: the token-mixer output proj (`o_proj` for attention,
+    `out_proj` for gated-DeltaNet) + the MLP `down_proj`. Zeroing exactly these
+    makes a standard pre-norm block (h += attn(norm(h)); h += mlp(norm(h))) an
+    exact identity. Matches through peft's `.base_layer` wrapping so it works
+    both before and after LoRA injection."""
+    hits = []
+    for n, m in block.named_modules():
+        if not isinstance(m, torch.nn.Linear):
+            continue
+        base = n[: -len(".base_layer")] if n.endswith(".base_layer") else n
+        if base.rsplit(".", 1)[-1] in ("o_proj", "out_proj", "down_proj"):
+            hits.append((n, m))
+    return hits
+
+
 # ----------------------------------------------------------------------------
 # LR schedule: linear warmup → cosine decay to min_lr
 # ----------------------------------------------------------------------------
@@ -390,7 +406,7 @@ def build_lr_lambda(warmup_steps, total_steps, min_lr_ratio):
 
 @torch.no_grad()
 def heldout_av_ce(model, tokenizer, rows, cfg, vectors_ref, device, *,
-                  max_len=1024, micro_batch=16, n_slots=1):
+                  max_len=1024, micro_batch=16):
     """Held-out AV val loss: mean token-CE on response tokens over doc-disjoint
     held-out AV rows — the SAME per-response-token CE the AV trains on, so it's
     directly comparable to the train `loss` (train loss is a memorization proxy;
@@ -400,7 +416,7 @@ def heldout_av_ce(model, tokenizer, rows, cfg, vectors_ref, device, *,
         chunk = rows[cs:cs + micro_batch]
         ids, attn, loss_mask, v_batch = _av_prepare_chunk(
             chunk, tokenizer, cfg.injection_char, device,
-            max_len=max_len, n_slots=n_slots)
+            max_len=max_len)
         vectors_ref[0] = v_batch
         try:
             logits = model(input_ids=ids, attention_mask=attn).logits.float()
@@ -417,13 +433,8 @@ def heldout_av_ce(model, tokenizer, rows, cfg, vectors_ref, device, *,
     return (tot_loss / max(tot_tok, 1)), len(rows)
 
 
-def _av_prepare_chunk(rows, tokenizer, inject_char, device, max_len=1024,
-                      n_slots=1):
-    """Return (input_ids, attn, loss_mask, v_batch) — all [B, T] (or [B*n_slots, d]).
-
-    n_slots > 1: each row's activation_vector holds n_slots*d floats (slot-major),
-    the prompt contains n_slots consecutive markers, and v_batch is reshaped to
-    [B*n_slots, d] — the row-major order karvonen_inject_in_residual consumes."""
+def _av_prepare_chunk(rows, tokenizer, inject_char, device, max_len=1024):
+    """Return (input_ids, attn, loss_mask, v_batch) — all [B, T] (or [B, d])."""
     full_ids_list = []
     prompt_lens = []
     for row in rows:
@@ -467,12 +478,6 @@ def _av_prepare_chunk(rows, tokenizer, inject_char, device, max_len=1024,
         np.stack([r["activation_vector"] for r in rows]),
         dtype=torch.float32, device=device,
     )
-    if n_slots > 1:
-        assert v_batch.shape[1] % n_slots == 0, (
-            f"activation_vector dim {v_batch.shape[1]} not divisible by "
-            f"n_slots={n_slots}"
-        )
-        v_batch = v_batch.view(bs * n_slots, v_batch.shape[1] // n_slots)
     return batch_ids, attn, loss_mask, v_batch
 
 
@@ -567,6 +572,16 @@ def main():
                         "value_head + the new token's embedding row} — a grad hook zeroes the "
                         "embedding gradient for every other row. Tests whether a purpose-built "
                         "single aggregation token beats the multi-bpe '</text> <summary>' anchor.")
+    p.add_argument("--ar-fresh-block", action="store_true", default=False,
+                   help="AR mode: keep ONE structural decoder block ABOVE the extraction "
+                        "layer (--ar-num-layers = sidecar layer_index + 2), re-initialize "
+                        "it to an EXACT identity (zero its attention/deltanet output "
+                        "projection + MLP down projection so both residual branches emit "
+                        "0), and train the whole block (in addition to LoRA + value_head). "
+                        "Gives the read position a trainable cross-position aggregation "
+                        "step that per-position heads (--ar-mlp-head) lack. At init the "
+                        "block is a passthrough, so step-0 metrics must match the "
+                        "plain-identity-head baseline's.")
     # ---- Debug sampling: periodically dump example generations to a wandb Table ----
     p.add_argument("--sample-every", type=int, default=0,
                    help="Every N steps, log example generations to an accumulating "
@@ -593,11 +608,6 @@ def main():
                         "from_pretrained). --no-strip-final-norm reproduces "
                         "pre-2026-06 checkpoints. Recorded in ar_meta.json.")
     p.add_argument("--max-len", type=int, default=1024)
-    p.add_argument("--n-slots", type=int, default=1,
-                   help="AV multi-slot injection: activation_vector holds "
-                        "n_slots*d floats (slot-major) and the prompt contains "
-                        "n_slots consecutive markers; each slot is Karvonen-"
-                        "injected at its own marker position")
     p.add_argument("--lr", type=float, default=None,
                    help="If omitted: AV-mode default 1e-4 (best for a 1-epoch warm-start "
                         "in our sweeps), AR-mode default 2e-5.")
@@ -703,16 +713,24 @@ def main():
     # AR depth comes from the DATA, not a magic number: activations extracted at
     # layer K must be reconstructed by a K+1-block critic. 25 was a Qwen3-8B
     # (layer-24) constant that silently mistrained on any other extraction layer.
+    assert not (args.ar_fresh_block and args.mode != "ar"), "--ar-fresh-block is AR-only"
     if args.mode == "ar":
         _side_k = cfg.extraction_layer_index
+        # --ar-fresh-block keeps ONE extra block ABOVE the extraction layer
+        # (identity-re-init at build time below), so the required depth is
+        # layer_index + 2: blocks 0..K reproduce the extraction stream, block
+        # K+1 is the fresh trainable aggregator.
+        _fb_extra = 1 if args.ar_fresh_block else 0
         if args.ar_num_layers is None:
-            args.ar_num_layers = (_side_k + 1) if _side_k is not None else 25
+            args.ar_num_layers = (_side_k + 1 + _fb_extra) if _side_k is not None else 25 + _fb_extra
             print(f"[ar] --ar-num-layers defaulted to {args.ar_num_layers} "
-                  f"({'sidecar layer_index+1' if _side_k is not None else 'no sidecar layer_index; Qwen3-8B fallback'})")
+                  f"({'sidecar layer_index+1' if _side_k is not None else 'no sidecar layer_index; Qwen3-8B fallback'}"
+                  f"{' + 1 fresh block' if _fb_extra else ''})")
         elif _side_k is not None:
-            assert args.ar_num_layers == _side_k + 1, (
+            assert args.ar_num_layers == _side_k + 1 + _fb_extra, (
                 f"--ar-num-layers {args.ar_num_layers} != sidecar "
-                f"extraction.layer_index+1 = {_side_k + 1} — the critic would "
+                f"extraction.layer_index+1{'+1 (--ar-fresh-block)' if _fb_extra else ''} "
+                f"= {_side_k + 1 + _fb_extra} — the critic would "
                 f"read a different layer than the activations were captured at."
             )
 
@@ -804,6 +822,52 @@ def main():
             )
             if dmap is None:
                 model = model.to(device)
+        fresh_block = None
+        if args.ar_fresh_block:
+            assert not is_prepared_critic, (
+                "--ar-fresh-block needs a fresh truncation from the base model, "
+                "not a pre-prepared critic checkpoint (its extra block would "
+                "already be trained, not identity)")
+            from nla.utils.arch_adapters import resolve_decoder_layers
+            _dl = resolve_decoder_layers(model.backbone)
+            assert len(_dl) == args.ar_num_layers, (len(_dl), args.ar_num_layers)
+            fresh_block = _dl[-1]
+            # Zero BOTH residual branches' output projections → the block is an
+            # EXACT identity passthrough at init; the rest of its (pretrained)
+            # weights stay as-is and train back in via gradients.
+            _zeroed = []
+            with torch.no_grad():
+                for _n, _m in fresh_block_output_projs(fresh_block):
+                    _m.weight.zero_()
+                    if _m.bias is not None:
+                        _m.bias.zero_()
+                    _zeroed.append(_n)
+            assert any(_n.rsplit(".", 1)[-1] in ("o_proj", "out_proj") for _n in _zeroed) and \
+                any(_n.rsplit(".", 1)[-1] == "down_proj" for _n in _zeroed), (
+                f"fresh block: expected a token-mixer output proj AND an MLP "
+                f"down_proj to zero; got {_zeroed} — extend "
+                f"fresh_block_output_projs for this architecture")
+            print(f"[ar] fresh block = layer {args.ar_num_layers - 1} "
+                  f"(type={getattr(fresh_block, 'block_type', '?')}); zeroed "
+                  f"output projs {_zeroed} → exact identity at init", flush=True)
+            # Hard self-test: the block's recorded output must EQUAL its input
+            # bit-for-bit on a real forward (0-weight matmul is exactly 0, and
+            # residual + 0 is exact in any float dtype).
+            from nla.models import _inner_transformer
+            model.eval()
+            with torch.no_grad():
+                _dev = next(fresh_block.parameters()).device
+                _tids = torch.randint(100, 1000, (2, 16), device=_dev)
+                _hs = _inner_transformer(model.backbone)(
+                    input_ids=_tids, attention_mask=torch.ones_like(_tids),
+                    output_hidden_states=True, use_cache=False).hidden_states
+                _delta = (_hs[-1] - _hs[-2]).abs().max().item()
+                assert torch.equal(_hs[-1], _hs[-2]), (
+                    f"fresh block is NOT an exact identity at init: its output "
+                    f"differs from its input (max |Δ| = {_delta:.3e}) — wrong "
+                    f"projections zeroed?")
+            print("[ar] fresh-block identity self-test PASSED "
+                  "(block output == block input exactly on a random batch)", flush=True)
         if args.use_lora:
             # Inject LoRA IN-PLACE into the backbone's attn projections. Unlike
             # get_peft_model this does NOT wrap the backbone in a PeftModel, so
@@ -814,12 +878,21 @@ def main():
                 model.backbone = prepare_model_for_kbit_training(
                     model.backbone, use_gradient_checkpointing=args.gradient_checkpointing,
                 )
-            from nla.utils.arch_adapters import resolve_attn_target_modules
+            from nla.utils.arch_adapters import resolve_attn_target_modules, resolve_lora_target_modules
+            _ar_tm = resolve_lora_target_modules(model.backbone.config, args.lora_scope)
+            print(f"[ar] LoRA scope={args.lora_scope} -> {len(_ar_tm)} module types: {_ar_tm}", flush=True)
             inject_adapter_in_model(LoraConfig(
                 r=args.lora_r, lora_alpha=args.lora_alpha, lora_dropout=0.0,
                 bias="none", task_type="CAUSAL_LM", use_rslora=True,
-                target_modules=resolve_attn_target_modules(model.backbone.config),
+                target_modules=_ar_tm,
             ), model.backbone)
+            # bf16 LoRA + AdamW rounds sub-ULP updates to zero (measured ~86% adapter freeze
+            # late in long runs); keep adapters in fp32 so the updates actually land.
+            _n_fp32 = 0
+            for _n, _p in model.backbone.named_parameters():
+                if "lora_" in _n and _p.dtype != torch.float32:
+                    _p.data = _p.data.float(); _n_fp32 += 1
+            print(f"[ar] cast {_n_fp32} LoRA adapter tensors to fp32 (bf16-ULP-freeze fix)", flush=True)
             if args.ar_mlp_head:
                 _hd = next(model.value_head.parameters()).device
                 model.value_head = ResidualMLPHead(
@@ -850,6 +923,29 @@ def main():
                 p_.requires_grad_(True)
             print("[ar] backbone FROZEN — training value_head only "
                   "(linear-probe baseline, --freeze-backbone)")
+        if args.ar_fresh_block:
+            # Runs AFTER the LoRA/freeze requires_grad loops (they froze the
+            # block) and BEFORE the optimizer gathers trainable params: the
+            # fresh block trains FULLY, on top of the LoRA adapters + value_head.
+            for p_ in fresh_block.parameters():
+                p_.requires_grad_(True)
+            # bf16 params + direct (no-master-copy) Adam updates round ~every
+            # update on pretrained-magnitude weights to zero (ULP(w)/2 > lr for
+            # |w| > lr*512 — see --full-ft-dtype help), which would silently
+            # freeze most of the block. Keep the block's params fp32 and run its
+            # forward under a block-local bf16 autocast: layers 0..K keep the
+            # baseline's exact bf16 numerics, the block computes in bf16, and
+            # grads/updates accumulate in fp32.
+            fresh_block.to(torch.float32)
+            _fb_fwd = fresh_block.forward
+            def _fb_autocast_forward(*_a, **_kw):
+                with torch.autocast("cuda", dtype=torch.bfloat16):
+                    return _fb_fwd(*_a, **_kw)
+            fresh_block.forward = _fb_autocast_forward
+            _n_fb = sum(p_.numel() for p_ in fresh_block.parameters())
+            print(f"[ar] fresh block (layer {args.ar_num_layers - 1}) FULLY "
+                  f"trainable: {_n_fb / 1e6:.0f}M params, fp32 + block-local "
+                  f"bf16 autocast", flush=True)
         if args.ar_summary_token:
             # Give <|summary|> an embedding row and make ONLY that row learn.
             # Runs AFTER the LoRA/freeze requires_grad loops (they froze the
@@ -1072,7 +1168,7 @@ def main():
             if args.mode == "av":
                 ids, attn, loss_mask, v_batch = _av_prepare_chunk(
                     chunk_rows, tokenizer, cfg.injection_char, device,
-                    max_len=args.max_len, n_slots=args.n_slots,
+                    max_len=args.max_len,
                 )
                 # vectors_ref stays set through .backward() below: AV mode runs
                 # gradient checkpointing BY DEFAULT, the backward-time recompute
@@ -1142,8 +1238,21 @@ def main():
 
         # ---- step ----
         grad_norm = torch.nn.utils.clip_grad_norm_(trainable, args.max_grad_norm)
+        if args.ar_fresh_block and step == 0:
+            _nz = [n_ for n_, p_ in fresh_block.named_parameters()
+                   if p_.grad is not None and float(p_.grad.abs().max()) > 0]
+            print(f"[ar] fresh block @step0: {len(_nz)} param tensors with "
+                  f"nonzero grad: {_nz} (zero-init output projs gate gradient "
+                  f"flow to the rest of the block until they move off 0)", flush=True)
         optim.step()
         sched.step()
+        if args.ar_fresh_block and ((step + 1) in (3, 10, 20, 50) or (step + 1) % 150 == 0):
+            with torch.no_grad():
+                _zn = ", ".join(
+                    f"{_n}|W|={_m.weight.float().norm().item():.3e}"
+                    for _n, _m in fresh_block_output_projs(fresh_block))
+            print(f"[ar] fresh block zeroed-proj norms at step {step}: {_zn} "
+                  f"(must grow from 0 → block is training)", flush=True)
         if _sumtok_row0 is not None:
             # NOTE: the FIRST optim.step() runs at warmup lr = 0 (LambdaLR
             # evaluates lambda(0) = 0/warmup), so Δ == 0 at step 0 is expected;
@@ -1203,7 +1312,6 @@ def main():
                     samps = av_generate_samples(
                         model, tokenizer, sample_rows, cfg, device,
                         max_new_tokens=args.sample_max_new_tokens,
-                        n_slots=args.n_slots,
                     )
                 for s in samps:
                     sample_table_data.append([step, s["idx"],
@@ -1246,7 +1354,7 @@ def main():
             with amp():
                 h_ce, h_n = heldout_av_ce(
                     model, tokenizer, heldout_av_rows, cfg, vectors_ref, device,
-                    max_len=args.max_len, n_slots=args.n_slots)
+                    max_len=args.max_len)
             model.train()
             log["heldout_loss"] = h_ce
             log["heldout_ppl"] = math.exp(h_ce) if h_ce < 30 else float("inf")
@@ -1293,6 +1401,14 @@ def main():
                 sd = {n: p.detach().cpu().contiguous()
                       for n, p in model.named_parameters()
                       if ("lora_" in n) or n.startswith("value_head")}
+                if args.ar_fresh_block:
+                    # The fresh block trains fully — its weights are part of
+                    # the adapter checkpoint (reload = zero-init block K+1,
+                    # then load these on top).
+                    _fb_ids = {id(p_) for p_ in fresh_block.parameters()}
+                    for n_, p_ in model.named_parameters():
+                        if id(p_) in _fb_ids:
+                            sd[n_] = p_.detach().cpu().contiguous()
                 if sumtok_emb_weight is not None:
                     # the ONLY embedding row that trained — reload = resize +
                     # copy this row at sumtok_id (recorded in ar_meta.json).
@@ -1317,6 +1433,10 @@ def main():
                     # anchor whose (sole trained) embedding row is saved as
                     # 'sumtok_embedding_row' in the safetensors. null otherwise.
                     "summary_token_id": sumtok_id,
+                    # --ar-fresh-block: ar_num_layers = layer_index+2 and the
+                    # last block's fully-trained weights ride along in the
+                    # safetensors (reload must re-init block K+1 before load).
+                    "ar_fresh_block": args.ar_fresh_block,
                 }, indent=2))
                 tokenizer.save_pretrained(str(out_dir))
             else:
