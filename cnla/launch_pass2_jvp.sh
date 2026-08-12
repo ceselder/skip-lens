@@ -16,7 +16,7 @@ for i in $(seq 0 $((N-1))); do
   CUDA_VISIBLE_DEVICES=$GPU setsid python pretrain/collect_jvp_transport.py \
     --in-shards "/workspace/data/spans_raw/shard_*.parquet" \
     --out-dir /workspace/data/spans_jvp \
-    --worker $i --n-workers $N --batch-size 4 --dtype bf16 --backend dvjp \
+    --worker $i --n-workers $N --batch-size 64 --dtype bf16 --backend jvp \
     --probe-frac 0.02 \
     > logs/pass2_worker${i}.log 2>&1 < /dev/null &
   echo "launched pass2 worker $i on gpu $GPU pid $!"

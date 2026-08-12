@@ -88,7 +88,7 @@ for p in check:
         bad += 1
         print(f"[ar-big] SUFFIX MISMATCH: ...{ids[-len(suffix_ids):]} prompt tail={p[-60:]!r}", flush=True)
 assert bad == 0, f"{bad}/{len(check)} prompts failed suffix check"
-print(f"[ar-big] suffix check OK on {len(check)} prompts; act len row0 = {len(first[0][activation_vector])}", flush=True)
+print(f"[ar-big] suffix check OK on {len(check)} prompts; act len row0 = {len(first[0]['activation_vector'])}", flush=True)
 assert len(first[0]["activation_vector"]) == 5120
 assert pfo.metadata.num_rows == n_written
 

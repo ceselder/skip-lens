@@ -11,8 +11,9 @@ export HF_HOME=/workspace/.hf_home HF_HUB_OFFLINE=1 PYTHONPATH=/workspace/cnla/s
 mkdir -p logs ckpts/span_sweep
 
 AR_TRAIN=data/spans_onpolicy/ar_train.parquet
-AR_HELD=data/spans_onpolicy/ar_heldout.parquet
+AR_HELD=data/spans_onpolicy/av_val.parquet   # heldout loader needs AV-format (response+activation), NOT ar_heldout
 AV_TRAIN=data/spans_onpolicy/av_train.parquet
+ARM=${ARM:-all}   # all | ar | av  (relaunch a single arm without touching the other)
 
 AR_ROWS=$(python -c "import pyarrow.parquet as pq;print(pq.ParquetFile('$AR_TRAIN').metadata.num_rows)")
 AV_ROWS=$(python -c "import pyarrow.parquet as pq;print(pq.ParquetFile('$AV_TRAIN').metadata.num_rows)")
@@ -44,11 +45,15 @@ av_run(){  # $1=gpu $2=lr
   echo "AV lr=$2 gpu=$1 pid=$!"
 }
 
-ar_run 1 1e-5; sleep 10
-ar_run 2 3e-5; sleep 10
-ar_run 3 1e-4; sleep 10
-ar_run 4 3e-4; sleep 10
-av_run 5 3e-5; sleep 10
-av_run 6 1e-4; sleep 10
-av_run 7 3e-4; sleep 10
-echo "SWEEP_LAUNCHED: AR{1e-5,3e-5,1e-4,3e-4} on gpu1-4 ; AV{3e-5,1e-4,3e-4} on gpu5-7"
+if [ "$ARM" != av ]; then
+  ar_run 1 1e-5; sleep 10
+  ar_run 2 3e-5; sleep 10
+  ar_run 3 1e-4; sleep 10
+  ar_run 4 3e-4; sleep 10
+fi
+if [ "$ARM" != ar ]; then
+  av_run 5 3e-5; sleep 10
+  av_run 6 1e-4; sleep 10
+  av_run 7 3e-4; sleep 10
+fi
+echo "SWEEP_LAUNCHED (arm=$ARM): AR{1e-5,3e-5,1e-4,3e-4} gpu1-4 ; AV{3e-5,1e-4,3e-4} gpu5-7"

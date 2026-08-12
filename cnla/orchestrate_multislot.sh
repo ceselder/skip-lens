@@ -49,13 +49,17 @@ while true; do
     if pass1_done $s && ! pass2_done $s && [ -z "${P2_LAUNCHED[$s]:-}" ]; then
       # GPU s is free the moment its pass-1 shard finished
       log "pass-1 shard $s done -> pass-2 dvjp worker on GPU $s"
+      # jvp backend at batch 64: benchmarked 2026-08-12 — ~10x dvjp bs4
+      # throughput; dvjp OOMs at bs>=16 (double-backward graph). jvp == dvjp
+      # numerically (cos 1.000 all deltas, same-graph identity verified).
       ( source /workspace/venv_jvp/bin/activate
-        CUDA_VISIBLE_DEVICES=$s PYTHONPATH=/workspace/skip-lens setsid \
+        CUDA_VISIBLE_DEVICES=$s PYTHONPATH=/workspace/skip-lens \
+        PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True setsid \
         python pretrain/collect_jvp_transport.py \
           --in-shards "/workspace/data/spans_raw/shard_${s}.parquet" \
           --out-dir /workspace/data/spans_jvp \
-          --worker 0 --n-workers 1 --batch-size 4 --dtype bf16 \
-          --backend dvjp --probe-frac 0.02 \
+          --worker 0 --n-workers 1 --batch-size 64 --dtype bf16 \
+          --backend jvp --probe-frac 0.02 \
           > logs/pass2_shard${s}.log 2>&1 < /dev/null & )
       P2_LAUNCHED[$s]=1
     fi
