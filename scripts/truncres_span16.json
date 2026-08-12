@@ -1,9 +1,5 @@
 {
-  "dist_from_last": [
-    0,
-    1,
-    2,
-    3,
+  "span_tokens_seen": [
     4,
     5,
     6,
@@ -16,51 +12,33 @@
     13,
     14,
     15,
-    16,
-    17,
-    18
+    16
   ],
-  "last_token_fve": [
-    31.2,
-    25.2,
-    -10.2,
-    -14.2,
-    -3.1,
-    -17.2,
-    -38.1,
-    -37.0,
-    -36.2,
-    -36.1,
-    -36.7,
-    -36.2,
-    -37.2,
-    -37.6,
-    -36.4,
-    -37.2,
-    -37.3,
-    -39.4,
-    -41.0
+  "dense_all_idx_fve": [
+    9.9,
+    13.5,
+    16.3,
+    18.6,
+    20.4,
+    22.2,
+    23.7,
+    25.1,
+    26.3,
+    27.0,
+    27.9,
+    28.7,
+    29.4
   ],
-  "all_idx_fve": [
+  "last_token_at_anchor_fve": 31.2,
+  "suffix_plateau_fve": [
     30.2,
     30.2,
     30.2,
     30.1,
     29.8,
     29.8,
-    29.4,
-    28.7,
-    27.9,
-    27.0,
-    26.3,
-    25.1,
-    23.7,
-    22.2,
-    20.4,
-    18.6,
-    16.3,
-    13.5,
-    9.9
+    29.4
   ],
-  "note": "norm-constrained FVE, span16, 1500 steps"
+  "suffix_tokens_m": 6,
+  "note": "held-out doc-disjoint val; x=span tokens seen=clamp(22-d,0,16); <4 tokens unmeasured (6-tok suffix + max_dist=18); last-token AR only has a valid readout at its trained anchor (full span) -- reads at other positions are untrained and were dropped as meaningless"
 }

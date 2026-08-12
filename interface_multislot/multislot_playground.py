@@ -6,11 +6,15 @@ lens (arm A) + its single-slot baseline (arm C):
 
   * paste/run a prompt (system+user+assistant supported), click any token
   * linear readouts: logit lens / pooled-J̄ lens at L42 and L62
-  * trained readouts via the comparison slots: category "armA-K8" exposes the
-    eval CONDITIONS as the checkpoint dropdown —
-      per_offset        slot d = Jbar^(d) @ h42   (the design)
-      pooled_identical  8 copies of Jbar_pooled @ h42
-      slot0_only / no_slot0 / shuffled_slots      (knockouts)
+  * trained readouts via the comparison slots: category "armA-K8" exposes every
+    slot construction from evals/slot_builders.py as the checkpoint dropdown,
+    ordered best-measured-first (judged workspace agreement, 551 items, 0-2):
+      diff 0.586                slot 0 intact, slots 1-7 = horizon increments
+      keep0_deflate_rest        slot 0 intact, 1-7 shared-component removed
+      keep0_gs_rest             slot 0 intact, 1-7 orthogonalized
+      per_offset 0.289          the design as specified: slot d = Jbar^(d) @ h42
+      slot0_only 0.544 / shuffled 0.532 / no_slot0 0.497   knockouts
+      pooled_identical 0.269 / deflated 0.236 / centered 0.218
     category "armC-1slot" runs the single-slot baseline on Jbar_pooled @ h42.
 
   PORT=8807 CUDA_VISIBLE_DEVICES=1 python multislot_playground.py
@@ -26,9 +30,13 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "interface"))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(_HERE, "..", "interface"))
+sys.path.insert(0, os.path.join(_HERE, "..", "evals"))
 sys.path.insert(0, "/workspace/skip-lens/interface")
+sys.path.insert(0, "/workspace/skip-lens/evals")
 from common import resolve_text_model, norm_gain
+from slot_builders import CONDITIONS, build_slots
 
 _USER = os.environ.get("PG_USER", "claude")
 _PASS = os.environ.get("PG_PASS", "claube")
@@ -69,6 +77,15 @@ JBAR = [torch.from_numpy(np.load(
 JPOOL = torch.from_numpy(np.load(
     os.path.join(JBAR_DIR, f"Jbar_L{SRC_L}_to_L{TARGET_L}_offpooled.npy"))).to(dev).float()
 JMATS = {SRC_L: JPOOL.to(torch.bfloat16)}
+_hb = os.path.join(JBAR_DIR, f"hbar_L{SRC_L}.npy")
+HBAR = (torch.from_numpy(np.load(_hb)).float().to(dev) if os.path.exists(_hb) else None)
+MEANDIR = {}
+for _d in range(K):
+    _p = os.path.join(JBAR_DIR, f"meandir_off{_d}.npy")
+    if os.path.exists(_p):
+        MEANDIR[_d] = torch.from_numpy(np.load(_p)).float().to(dev)
+print(f"[ms] centering assets: hbar={'yes' if HBAR is not None else 'NO'} "
+      f"meandirs={len(MEANDIR)}", flush=True)
 JLAYERS = [SRC_L]
 CAP_LAYERS = [SRC_L, TARGET_L]
 print(f"[ms] {K} per-offset Jbar + pooled loaded", flush=True)
@@ -106,27 +123,25 @@ _PT_MULTI = _pt(MULTI_TEMPLATE)
 _PT_SINGLE = _pt(SINGLE_TEMPLATE)
 print("[ms] armA + armC adapters loaded", flush=True)
 
-CONDITIONS = ["per_offset", "pooled_identical", "slot0_only", "no_slot0",
-              "shuffled_slots"]
-REGISTRY = {"armA-K8": {c: c for c in CONDITIONS},
+# Ordered so the first entries are the best-scoring constructions (judged
+# workspace agreement, 551 official items, judge scale 0-2):
+#   diff 0.586 | slot0_only 0.544 | shuffled 0.532 | no_slot0 0.497
+#   per_offset 0.289 (the design as specified) | pooled_identical 0.269
+#   deflated 0.236 | centered 0.218      keep0_* are the newest, untested here
+COND_ORDER = ["diff", "keep0_deflate_rest", "keep0_gs_rest", "per_offset",
+              "slot0_only", "shuffled_slots", "no_slot0", "gs",
+              "pooled_identical", "deflated", "centered"]
+COND_ORDER = [c for c in COND_ORDER if c in CONDITIONS]
+REGISTRY = {"armA-K8": {c: c for c in COND_ORDER},
             "armC-1slot": {"pooledJ": "pooledJ"}}
 
 RUNS, LOCK = {}, threading.Lock()
 
 
 def slots_for(cond, h42):
-    per = torch.stack([JBAR[d] @ h42 for d in range(K)])
-    if cond == "per_offset":
-        return per
-    if cond == "pooled_identical":
-        return (JPOOL @ h42).expand(K, -1).contiguous()
-    if cond == "slot0_only":
-        s = torch.zeros_like(per); s[0] = per[0]; return s
-    if cond == "no_slot0":
-        s = per.clone(); s[0] = 0; return s
-    if cond == "shuffled_slots":
-        return per[(torch.arange(K) + K // 2) % K]
-    raise HTTPException(404, f"unknown condition {cond!r}")
+    """Delegates to evals/slot_builders.py — the same code path the judged
+    evals use, so the playground can never drift from the measured numbers."""
+    return build_slots(cond, h42, JBAR, JPOOL, k=K, hbar=HBAR, meandirs=MEANDIR)
 
 
 @torch.no_grad()
@@ -335,7 +350,7 @@ def api_ao(r: AoReq, _=Depends(require_auth)):
             try:
                 smx = max(1, min(int(s.max_new), 64)) if s.max_new else mx
                 if s.cat == "armA-K8":
-                    if s.ckpt not in CONDITIONS:
+                    if s.ckpt not in COND_ORDER:
                         raise HTTPException(404, f"unknown condition {s.ckpt!r}")
                     cell["readout"] = _roll(slots_for(s.ckpt, h42), "armA",
                                             _PT_MULTI, n, smx)

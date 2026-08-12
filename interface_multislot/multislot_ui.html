@@ -228,12 +228,8 @@ async function pick(pos,el){
   const PEN=(META&&META.target)||62;
   // Every arm uses the same frozen LM head. Bitter is compared with both its
   // matched normalized mean-J baseline and the paper/raw mean-J lens.
-  const hasBitter=(META.bitter_layers||[]).includes(L);
-  const [dB,dJN,dJ,dRl,dR]=await Promise.all([
-    hasBitter?api('/api/allheads',{run_id:RUN.run_id,pos:pos,layer:L,feed:'bitter',topk:show}):Promise.resolve(null),
-    hasBitter?api('/api/allheads',{run_id:RUN.run_id,pos:pos,layer:L,feed:'j_norm',topk:show}):Promise.resolve(null),
+  const [dJ,dR]=await Promise.all([
     api('/api/allheads',{run_id:RUN.run_id,pos:pos,layer:L,use_j:true, topk:show}),
-    api('/api/allheads',{run_id:RUN.run_id,pos:pos,layer:L,feed:'r',   topk:show}),
     api('/api/allheads',{run_id:RUN.run_id,pos:pos,layer:L,use_j:false,topk:show})]);
   const d=dJ;
   let h=`<div class="poshd"><b>position ${pos}</b> <span class="badge ${d.is_assistant?'b-m':'b-hi'}">${d.is_assistant?'model reply':'user prompt'}</span>
@@ -242,31 +238,20 @@ async function pick(pos,el){
     <div class="srcline">source layer L${L} → block ${PEN}</div></div>`;
   const HN={lm:'LM head — next token (logit / J-lens)',1:'k=1 · next',2:'k=2 · after-next',
             3:'k=3 · 3 ahead',4:'k=4 · 4 ahead',5:'k=5 · 5 ahead'};
-  const rowsB={},rowsJN={},rowsJ={},rowsRL={},rowsR={};
-  if(dB)dB.rows.forEach(r=>rowsB[r.head]=r.top);
-  if(dJN)dJN.rows.forEach(r=>rowsJN[r.head]=r.top);
-  dJ.rows.forEach(r=>rowsJ[r.head]=r.top); dRl.rows.forEach(r=>rowsRL[r.head]=r.top); dR.rows.forEach(r=>rowsR[r.head]=r.top);
+  const rowsJ={},rowsR={};
+  dJ.rows.forEach(r=>rowsJ[r.head]=r.top); dR.rows.forEach(r=>rowsR[r.head]=r.top);
   const cell=top=>(!top||!top.length)?'<span class="none">—</span>'
     :top.slice(0,show).map(([t,p])=>`<span class="tk${fade&&p<0.01?' lo':''}"><b>${esc(vis(t))}</b> <i>${(p*100).toFixed(0)}%</i></span>`).join('');
-  h+=`<div class="mathd">frozen LM-head top tokens · Bitter vs matched mean-J vs paper J-lens</div>`;
+  h+=`<div class="mathd">frozen LM-head top tokens · pooled J&#772;-lens vs plain logit lens</div>`;
   Object.keys(rowsJ).forEach(hd=>{
-    h+=`<div class="mrow" style="grid-template-columns:140px ${hasBitter?'1fr 1fr ':''}1fr 1fr 1fr"><div class="mname">${HN[hd]||('k='+hd)}</div>`
-      +(hasBitter?`<div class="mcell"><span class="clab" style="color:#8b3fb2">Bitter Lens</span>${cell(rowsB[hd])}</div>`
-        +`<div class="mcell"><span class="clab" style="color:#2166ac">mean J · norm-matched</span>${cell(rowsJN[hd])}</div>`:'')
-      +`<div class="mcell"><span class="clab">J-lens</span>${cell(rowsJ[hd])}</div>`
-      +`<div class="mcell"><span class="clab" style="color:#0f8b8d">R-lens</span>${cell(rowsRL[hd])}</div>`
+    h+=`<div class="mrow" style="grid-template-columns:140px 1fr 1fr"><div class="mname">${HN[hd]||('k='+hd)}</div>`
+      +`<div class="mcell"><span class="clab">pooled J&#772;-lens</span>${cell(rowsJ[hd])}</div>`
       +`<div class="mcell"><span class="clab">logit (raw)</span>${cell(rowsR[hd])}</div></div>`;});
   $('#insp').innerHTML=h;
   // trained future-lens MATRIX: {J(h)@L, raw@L, raw@penult} x {AO, naive}, fired concurrently.
-  const cfgs=[];
-  if(hasBitter) cfgs.push({k:'bitter',lab:`L${L} (Bitter)`,layer:L,use_j:false,feed:'bitter'},
-                          {k:'jnorm',lab:`L${L} (mean J · norm-matched)`,layer:L,use_j:false,feed:'j_norm'});
-  cfgs.push({k:'jac',lab:`L${L} (paper J)`,layer:L,use_j:true,feed:'j'},
-            {k:'rl',lab:`L${L} (R)`,layer:L,use_j:false,feed:'r'},
-            {k:'raw',lab:`L${L} (raw)`,layer:L,use_j:false,feed:'raw'});
-  if(L!==PEN) cfgs.push({k:'pen',lab:`L${PEN}`,layer:PEN,use_j:false,feed:'raw'});
+  const cfgs=[{k:'slots',lab:`h(L${L}) → 8 slots`,layer:L,use_j:false,feed:''}];
   const w=document.createElement('div');
-  w.innerHTML=`<div class="mathd ao">🔮 trained future-lens · 3 comparison slots (header dropdowns) · 1 rollout each</div>`
+  w.innerHTML=`<div class="mathd ao">🔮 multi-slot lens · slots built from the averaged per-offset J&#772; family · 3 constructions side by side (header dropdowns)</div>`
     +cfgs.map(c=>`<div class="mrow aorow" id="ao_${c.k}"><div class="mname">${c.lab}</div><div class="mcell aoroll">generating…</div></div>`).join('');
   $('#insp').appendChild(w);
   // Trained-lens rollouts: SEQUENTIAL within this click (backend LOCK also serializes across
