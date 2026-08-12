@@ -188,6 +188,46 @@ def heldout_fve_mse(critic, tokenizer, pairs, template, mse_scale_f, device,
     return float(np.mean(mses)) if mses else float("nan"), len(mses)
 
 
+@torch.no_grad()
+def heldout_fve_by_dist(critic, tokenizer, pairs, template, mse_scale_f, device,
+                        baseline, max_dist=18, micro_batch=16, max_len=1024):
+    """FVE reading at each distance-from-last-real-token (d=0 = normal last-token read; larger d
+    = truncating the span by d tokens). A dense/all-idx AR stays high across d (truncation-
+    resistant); a last-token-only AR peaks at d=0 and decays. Returns [(d, fve%, n)]."""
+    sse = np.zeros(max_dist + 1); cnt = np.zeros(max_dist + 1)
+    for cs in range(0, len(pairs), micro_batch):
+        chunk = pairs[cs:cs + micro_batch]
+        ids_list, golds = [], []
+        for expl, act in chunk:
+            ids = tokenizer.encode(template.format(explanation=expl), add_special_tokens=False)
+            if not 0 < len(ids) <= max_len:
+                continue
+            ids_list.append(torch.tensor(ids, dtype=torch.long)); golds.append(act)
+        if not ids_list:
+            continue
+        bs = len(ids_list); T = max(t.numel() for t in ids_list)
+        batch_ids = torch.full((bs, T), tokenizer.eos_token_id, dtype=torch.long, device=device)
+        attn = torch.zeros((bs, T), dtype=torch.long, device=device)
+        for i, t in enumerate(ids_list):
+            batch_ids[i, :t.numel()] = t.to(device); attn[i, :t.numel()] = 1
+        pred_all = critic_predict_all(critic, batch_ids, attn, mse_scale_f)  # [B,T,D]
+        B_, T_, D_ = pred_all.shape
+        pred_n = normalize_activation(pred_all.reshape(B_ * T_, D_), mse_scale_f).reshape(B_, T_, D_)
+        gold = torch.tensor(np.stack(golds), dtype=torch.float32, device=device)
+        gold_n = normalize_activation(gold, mse_scale_f)  # [B,D]
+        last = attn.sum(1) - 1  # [B]
+        for d in range(max_dist + 1):
+            pos = last - d
+            ok = pos >= 0
+            if int(ok.sum()) == 0:
+                continue
+            bi = torch.arange(B_, device=device)[ok]
+            mse = ((pred_n[bi, pos[ok]] - gold_n[ok]) ** 2).mean(-1)  # [n]
+            sse[d] += float(mse.sum()); cnt[d] += int(ok.sum())
+    return [(d, (1.0 - (sse[d] / cnt[d]) / baseline) * 100.0 if cnt[d] > 0 else float("nan"), int(cnt[d]))
+            for d in range(max_dist + 1)]
+
+
 def ar_debug_stats(pred, gold, mse_scale_f):
     """Cheap per-batch AR diagnostics: norms + direction match (cosine).
 
@@ -206,7 +246,7 @@ def ar_debug_stats(pred, gold, mse_scale_f):
 
 @torch.no_grad()
 def av_generate_samples(model, tokenizer, rows, cfg, device, *,
-                        max_new_tokens=256, n_slots=1):
+                        max_new_tokens=256):
     """Generate explanations for a few fixed activations (AV debug table).
 
     Returns list of dicts: {idx, gen_len, explanation}.
@@ -224,8 +264,7 @@ def av_generate_samples(model, tokenizer, rows, cfg, device, *,
             msgs, tokenize=False, add_generation_prompt=True, enable_thinking=False)
         ids = tokenizer.encode(ptxt, add_special_tokens=False)
         pt = torch.tensor([ids], dtype=torch.long, device=device)
-        act = torch.tensor(row["activation_vector"], dtype=torch.float32)
-        act = act.view(n_slots, -1).to(device)  # n_slots=1 -> [1, d], unchanged
+        act = torch.tensor(row["activation_vector"], dtype=torch.float32).unsqueeze(0).to(device)
         if vref is not None:
             vref[0] = act
         try:
@@ -407,7 +446,7 @@ def build_lr_lambda(warmup_steps, total_steps, min_lr_ratio):
 
 @torch.no_grad()
 def heldout_av_ce(model, tokenizer, rows, cfg, vectors_ref, device, *,
-                  max_len=1024, micro_batch=16, n_slots=1):
+                  max_len=1024, micro_batch=16):
     """Held-out AV val loss: mean token-CE on response tokens over doc-disjoint
     held-out AV rows — the SAME per-response-token CE the AV trains on, so it's
     directly comparable to the train `loss` (train loss is a memorization proxy;
@@ -417,7 +456,7 @@ def heldout_av_ce(model, tokenizer, rows, cfg, vectors_ref, device, *,
         chunk = rows[cs:cs + micro_batch]
         ids, attn, loss_mask, v_batch = _av_prepare_chunk(
             chunk, tokenizer, cfg.injection_char, device,
-            max_len=max_len, n_slots=n_slots)
+            max_len=max_len)
         vectors_ref[0] = v_batch
         try:
             logits = model(input_ids=ids, attention_mask=attn).logits.float()
@@ -434,13 +473,8 @@ def heldout_av_ce(model, tokenizer, rows, cfg, vectors_ref, device, *,
     return (tot_loss / max(tot_tok, 1)), len(rows)
 
 
-def _av_prepare_chunk(rows, tokenizer, inject_char, device, max_len=1024,
-                      n_slots=1):
-    """Return (input_ids, attn, loss_mask, v_batch) — all [B, T] (or [B*n_slots, d]).
-
-    n_slots > 1: each row's activation_vector holds n_slots*d floats (slot-major),
-    the prompt contains n_slots consecutive markers, and v_batch is reshaped to
-    [B*n_slots, d] — the row-major order karvonen_inject_in_residual consumes."""
+def _av_prepare_chunk(rows, tokenizer, inject_char, device, max_len=1024):
+    """Return (input_ids, attn, loss_mask, v_batch) — all [B, T] (or [B, d])."""
     full_ids_list = []
     prompt_lens = []
     for row in rows:
@@ -484,12 +518,6 @@ def _av_prepare_chunk(rows, tokenizer, inject_char, device, max_len=1024,
         np.stack([r["activation_vector"] for r in rows]),
         dtype=torch.float32, device=device,
     )
-    if n_slots > 1:
-        assert v_batch.shape[1] % n_slots == 0, (
-            f"activation_vector dim {v_batch.shape[1]} not divisible by "
-            f"n_slots={n_slots}"
-        )
-        v_batch = v_batch.view(bs * n_slots, v_batch.shape[1] // n_slots)
     return batch_ids, attn, loss_mask, v_batch
 
 
@@ -572,6 +600,9 @@ def main():
                    help="AR mode: DENSE objective — supervise the value head to reproduce the "
                         "target activation at EVERY position (each causal prefix), not just the "
                         "last/anchor token. 'reconstruct-as-you-read'; no privileged read point.")
+    p.add_argument("--ar-fve-by-dist", action="store_true", default=False,
+                   help="AR: at the final heldout, also log FVE reading at each distance-from-last "
+                        "token (d0..d18) — the truncation-resistance curve.")
     p.add_argument("--ar-mlp-head", action="store_true", default=False,
                    help="AR mode: replace the Linear(d,d) value head with a deep pre-norm residual "
                         "MLP + identity affine (identity-init, co-trained) — tests whether the head "
@@ -620,11 +651,6 @@ def main():
                         "from_pretrained). --no-strip-final-norm reproduces "
                         "pre-2026-06 checkpoints. Recorded in ar_meta.json.")
     p.add_argument("--max-len", type=int, default=1024)
-    p.add_argument("--n-slots", type=int, default=1,
-                   help="AV multi-slot injection: activation_vector holds "
-                        "n_slots*d floats (slot-major) and the prompt contains "
-                        "n_slots consecutive markers; each slot is Karvonen-"
-                        "injected at its own marker position")
     p.add_argument("--lr", type=float, default=None,
                    help="If omitted: AV-mode default 1e-4 (best for a 1-epoch warm-start "
                         "in our sweeps), AR-mode default 2e-5.")
@@ -1185,7 +1211,7 @@ def main():
             if args.mode == "av":
                 ids, attn, loss_mask, v_batch = _av_prepare_chunk(
                     chunk_rows, tokenizer, cfg.injection_char, device,
-                    max_len=args.max_len, n_slots=args.n_slots,
+                    max_len=args.max_len,
                 )
                 # vectors_ref stays set through .backward() below: AV mode runs
                 # gradient checkpointing BY DEFAULT, the backward-time recompute
@@ -1329,7 +1355,6 @@ def main():
                     samps = av_generate_samples(
                         model, tokenizer, sample_rows, cfg, device,
                         max_new_tokens=args.sample_max_new_tokens,
-                        n_slots=args.n_slots,
                     )
                 for s in samps:
                     sample_table_data.append([step, s["idx"],
@@ -1372,7 +1397,7 @@ def main():
             with amp():
                 h_ce, h_n = heldout_av_ce(
                     model, tokenizer, heldout_av_rows, cfg, vectors_ref, device,
-                    max_len=args.max_len, n_slots=args.n_slots)
+                    max_len=args.max_len)
             model.train()
             log["heldout_loss"] = h_ce
             log["heldout_ppl"] = math.exp(h_ce) if h_ce < 30 else float("inf")
@@ -1400,6 +1425,14 @@ def main():
             log["heldout_mse"] = h_mse
             print(f"  [heldout@{step}] mse {h_mse:.4f} | FVE {h_fve:.1f}% "
                   f"(n={h_n})", flush=True)
+            if args.ar_fve_by_dist and (step + 1) == args.num_steps:
+                model.eval()
+                with amp():
+                    _byd = heldout_fve_by_dist(
+                        model, tokenizer, heldout_pairs, cfg.critic_prompt_template,
+                        mse_scale_f, device, heldout_baseline, max_dist=18, max_len=args.max_len)
+                model.train()
+                print("FVE_BY_DIST " + " ".join(f"d{d}={f:.1f}" for d, f, n in _byd), flush=True)
 
         if not args.no_wandb:
             wandb.log(log, step=step)

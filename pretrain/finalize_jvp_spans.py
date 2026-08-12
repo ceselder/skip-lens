@@ -82,6 +82,7 @@ def main():
         return writers[path]
 
     n_train = n_val = n_dropped_cos = n_dropped_short = 0
+    n_dropped_roundtrip = 0
     for f in files:
         pf = pq.ParquetFile(f)
         for rg in range(pf.num_row_groups):
@@ -101,6 +102,14 @@ def main():
                 resp = tok.decode(roll[: args.k_slots], skip_special_tokens=True)
                 if len(resp.strip()) < 2:
                     n_dropped_short += 1
+                    continue
+                # decode->encode must round-trip: BPE re-merges ("\n"+"\n" ->
+                # "\n\n") or a rollout that splits a multi-byte character would
+                # otherwise train on a token sequence different from the one the
+                # transports were computed for (~0.09% of rows).
+                if tok.encode(resp, add_special_tokens=False) != [
+                        int(x) for x in roll[: args.k_slots]]:
+                    n_dropped_roundtrip += 1
                     continue
                 dest = args.out_val if is_val(r["doc_id"], args.val_frac) \
                     else args.out_train
@@ -125,7 +134,8 @@ def main():
                 else:
                     n_val += len(batch)
         print(f"  {os.path.basename(f)}: train={n_train} val={n_val} "
-              f"dropped(cos)={n_dropped_cos} dropped(short)={n_dropped_short}",
+              f"dropped(cos)={n_dropped_cos} dropped(short)={n_dropped_short} "
+              f"dropped(roundtrip)={n_dropped_roundtrip}",
               flush=True)
 
     for path, w in writers.items():
@@ -133,7 +143,8 @@ def main():
         os.replace(path + ".tmp", path)
     frac_dropped = n_dropped_cos / max(1, n_train + n_val + n_dropped_cos)
     meta = {"k_slots": args.k_slots, "train_rows": n_train, "val_rows": n_val,
-            "dropped_low_cos": n_dropped_cos, "dropped_short": n_dropped_short}
+            "dropped_low_cos": n_dropped_cos, "dropped_short": n_dropped_short,
+            "dropped_roundtrip": n_dropped_roundtrip}
     json.dump(meta, open(args.out_train + ".meta.json", "w"), indent=2)
     print(json.dumps(meta), flush=True)
 
