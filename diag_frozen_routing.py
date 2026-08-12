@@ -42,7 +42,10 @@ from pretrain.collect_jvp_transport import (  # noqa: E402
 
 BASE = "Qwen/Qwen3.6-27B"
 JDIR = os.environ.get("JBAR_DIR", "/workspace/results/offset_jlens")
-SHARD = os.environ.get("SHARD", "/workspace/data/spans_jvp/shard_3_jvp.parquet")
+# RAW shard: pass-2 output lacks teacher_input_ids, and note the raw
+# `activation_vector` column is act_L62 by convention — h42 must come from
+# act_L42 explicitly (per the data audit).
+SHARD = os.environ.get("SHARD", "/workspace/data/spans_raw/shard_3.parquet")
 N_ROWS = int(os.environ.get("N_ROWS", "64"))
 BATCH = int(os.environ.get("BATCH", "8"))
 DELTAS = [0, 1, 2, 3, 7]
@@ -52,11 +55,9 @@ OUT = os.environ.get("OUT", "/workspace/results/multislot_eval/frozen_routing.js
 # RMSNorm denominator, SiLU/MLP gate, softmax attention weights, DeltaNet gates)
 sys.path.insert(0, "/workspace/skip-lens")
 import rlens_fit  # noqa: E402
-from contextlib import contextmanager  # noqa: E402
 
+# already @contextlib.contextmanager-decorated in rlens_fit: call it directly
 _patch_cm = rlens_fit.lrp_detach_patches
-if not hasattr(_patch_cm, "__enter__"):
-    _patch_cm = contextmanager(rlens_fit.lrp_detach_patches)
 
 disable_tf32()
 tok = AutoTokenizer.from_pretrained(BASE)
@@ -67,8 +68,8 @@ for p in model.parameters():
     p.requires_grad_(False)
 
 rows = pq.read_table(SHARD).to_pylist()[:N_ROWS * 2]
-rows = [r for r in rows if r["rollout_token_ids"] and len(r["rollout_token_ids"]) >= 16
-        ][:N_ROWS]
+rows = [r for r in rows if r["rollout_token_ids"]
+        and len(r["rollout_token_ids"][0]) >= 16][:N_ROWS]
 print(f"{len(rows)} rows from {SHARD}", flush=True)
 
 Jbar = {d: torch.from_numpy(np.load(f"{JDIR}/Jbar_L42_to_L62_off{d}.npy")).float().cuda()
@@ -78,7 +79,7 @@ loc_all, frz_all, jb_all = [], [], []
 for c0 in range(0, len(rows), BATCH):
     batch = rows[c0:c0 + BATCH]
     ids, mask, p_pos = prepare_batch(batch, pad_id, "cuda")
-    h42 = torch.tensor(np.array([r["activation_vector"] for r in batch],
+    h42 = torch.tensor(np.array([r["act_L42"] for r in batch],
                                 dtype=np.float32)).cuda()
     loc, _, _ = jvp_transports(model, ids, mask, p_pos, h42)
     with _patch_cm():

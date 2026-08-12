@@ -1,0 +1,20 @@
+import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt, json
+d=list(range(19))
+last=[31.2,25.2,-10.2,-14.2,-3.1,-17.2,-38.1,-37.0,-36.2,-36.1,-36.7,-36.2,-37.2,-37.6,-36.4,-37.2,-37.3,-39.4,-41.0]
+allx=[30.2,30.2,30.2,30.1,29.8,29.8,29.4,28.7,27.9,27.0,26.3,25.1,23.7,22.2,20.4,18.6,16.3,13.5,9.9]
+fig,ax=plt.subplots(figsize=(8.4,5.0))
+ax.axhline(0,color="#b0a89c",lw=1)
+ax.plot(d,allx,"-o",color="#1baf7a",lw=2.6,ms=6,label="dense --ar-all-idx (reconstruct at every prefix)")
+ax.plot(d,last,"--s",color="#c0562f",lw=2.2,ms=6,label="normal last-token AR")
+ax.annotate("last-token collapses to\nworse-than-mean 2 tokens in",(4,-3.1),textcoords="offset points",xytext=(20,8),fontsize=9,color="#c0562f")
+ax.annotate("dense stays usable\n(graceful decay)",(12,23.7),textcoords="offset points",xytext=(-4,20),fontsize=9,color="#1baf7a")
+ax.set_xlabel("tokens truncated from the read point  (distance from last token)")
+ax.set_ylabel("L62 reconstruction FVE, norm-constrained (%)")
+ax.set_title("Dense 'reconstruct-at-every-index' training buys truncation-resistance for ~free:\nusable FVE at any read distance; the last-token AR only works at the exact end",fontsize=10,weight="bold")
+ax.set_ylim(-45,40); ax.grid(alpha=0.25); ax.legend(frameon=False,loc="upper right")
+for s in ("top","right"): ax.spines[s].set_visible(False)
+plt.tight_layout()
+plt.savefig("/home/celeste/skip-lens/scripts/truncres_span16.png",dpi=150,bbox_inches="tight")
+plt.savefig("/home/celeste/skip-lens/scripts/truncres_span16.pdf",bbox_inches="tight")
+json.dump({"dist_from_last":d,"last_token_fve":last,"all_idx_fve":allx,"note":"norm-constrained FVE, span16, 1500 steps"},open("/home/celeste/skip-lens/scripts/truncres_span16.json","w"),indent=2)
+print("saved truncres_span16")

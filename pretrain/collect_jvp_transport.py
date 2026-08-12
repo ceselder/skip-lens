@@ -34,9 +34,11 @@ Usage (per GPU worker):
 """
 
 import argparse
+import contextlib
 import glob
 import json
 import os
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -266,6 +268,15 @@ def main():
                          "forward-AD (disagrees with reverse through the "
                          "hybrid DeltaNet stack; kept for diagnostics).")
     ap.add_argument("--dtype", choices=["bf16", "fp32"], default="bf16")
+    ap.add_argument("--frozen-routing", action="store_true",
+                    help="compute transports with CONTENT-DEPENDENT ROUTING "
+                         "DETACHED (attention softmax weights, GatedDeltaNet "
+                         "gates, RMSNorm denominators, SiLU gates) — the chord "
+                         "linearization. Measured to land 2.4-3.1x closer to the "
+                         "corpus-averaged Jacobian family than ordinary local "
+                         "transports (diag_frozen_routing.py), which shrinks the "
+                         "train/test mismatch from the TRAINING side while the "
+                         "averaged-Jbar readout stays untouched.")
     ap.add_argument("--fp32-check", action="store_true",
                     help="selftest: also load an fp32 model copy for a "
                          "cross-dtype dvjp comparison (needs a free GPU)")
@@ -293,6 +304,14 @@ def main():
     ).cuda().eval()
     for p in model.parameters():
         p.requires_grad_(False)
+
+    if args.frozen_routing:
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        import rlens_fit  # noqa: F401  (provides the qwen3_5 detach patches)
+        routing_ctx = rlens_fit.lrp_detach_patches
+        print("[collect] FROZEN ROUTING: chord linearization active", flush=True)
+    else:
+        routing_ctx = contextlib.nullcontext
 
     shards = sorted(glob.glob(args.in_shards))
     assert shards, f"no shards match {args.in_shards}"
@@ -327,10 +346,13 @@ def main():
             h42_re = capture_h42(model, ids, mask, p_pos)
             cos = torch.nn.functional.cosine_similarity(h42_re, stored, dim=-1)
 
-            if args.backend == "dvjp":
-                transported, _ = dvjp_transports(model, ids, mask, p_pos, stored)
-            else:
-                transported, _, _ = jvp_transports(model, ids, mask, p_pos, stored)
+            with routing_ctx():
+                if args.backend == "dvjp":
+                    transported, _ = dvjp_transports(model, ids, mask, p_pos,
+                                                     stored)
+                else:
+                    transported, _, _ = jvp_transports(model, ids, mask, p_pos,
+                                                       stored)
             norms = transported.norm(dim=-1)  # [B, 16]
 
             for i, r in enumerate(batch):
@@ -352,12 +374,13 @@ def main():
                     and len(batch) >= 2:
                 # derangement: every row gets a different row's tangent
                 perm = (torch.arange(len(batch)) + 1) % len(batch)
-                if args.backend == "dvjp":
-                    probe_t, _ = dvjp_transports(model, ids, mask, p_pos,
-                                                 stored[perm])
-                else:
-                    probe_t, _, _ = jvp_transports(model, ids, mask, p_pos,
-                                                   stored[perm])
+                with routing_ctx():
+                    if args.backend == "dvjp":
+                        probe_t, _ = dvjp_transports(model, ids, mask, p_pos,
+                                                     stored[perm])
+                    else:
+                        probe_t, _, _ = jvp_transports(model, ids, mask, p_pos,
+                                                       stored[perm])
                 for i, r in enumerate(batch):
                     probe_out.append({
                         "doc_id": r["doc_id"],

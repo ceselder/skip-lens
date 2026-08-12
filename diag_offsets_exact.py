@@ -84,19 +84,27 @@ def main() -> None:
     hf = (AutoModelForCausalLM.from_pretrained(
         BASE, torch_dtype=torch.bfloat16, attn_implementation="eager")
         .cuda().eval())
+    for p in hf.parameters():
+        p.requires_grad_(False)
     model = from_hf(hf, tok)
     prompt = json.load(open(f"{AUD}/heldout_prompts.json"))[28]
+    tstar = 16 + N_OFFSETS - 1 + PHASE
 
     # --- comb estimator, single tooth (exact rows, no averaging) -----------
-    jac, seq_len, n_teeth = offset_jacobians_for_prompt(
-        model, prompt, [SRC], target_layer=TGT,
-        n_offsets=N_OFFSETS, comb_spacing=SPACING, dim_batch=DIM_BATCH,
-        max_seq_len=SEQ, phase=PHASE, sign_seed=SIGN_SEED)
-    J = jac[SRC]  # [16, d, d] fp32
-    tstar = 16 + N_OFFSETS - 1 + PHASE
-    print(f"seq_len={seq_len} n_teeth={n_teeth} (must be 1) t*={tstar}",
-          flush=True)
-    assert n_teeth == 1
+    cache = f"{AUD}/exact_singletooth_J.pt"
+    if os.path.exists(cache):
+        J = torch.load(cache, map_location="cpu")
+        print(f"loaded cached single-tooth J from {cache}", flush=True)
+    else:
+        jac, seq_len, n_teeth = offset_jacobians_for_prompt(
+            model, prompt, [SRC], target_layer=TGT,
+            n_offsets=N_OFFSETS, comb_spacing=SPACING, dim_batch=DIM_BATCH,
+            max_seq_len=SEQ, phase=PHASE, sign_seed=SIGN_SEED)
+        J = jac[SRC]  # [16, d, d] fp32
+        print(f"seq_len={seq_len} n_teeth={n_teeth} (must be 1) t*={tstar}",
+              flush=True)
+        assert n_teeth == 1
+        torch.save(J, cache)
 
     d_model = J.shape[-1]
     gen = torch.Generator().manual_seed(0)
@@ -112,7 +120,7 @@ def main() -> None:
             b = len(deltas)
             p_pos = torch.tensor([tstar - d for d in deltas], device="cuda")
             tang = (vs[vi] * VSCALE).unsqueeze(0).expand(b, -1).cuda()
-            jv = dvjp(model, ids.expand(b, -1), p_pos, tang) / VSCALE
+            jv = dvjp(hf, ids.expand(b, -1), p_pos, tang) / VSCALE
             gt[vi, deltas] = jv[torch.arange(b), tstar].float().cpu()
             print(f"v{vi} deltas {deltas} done", flush=True)
 
