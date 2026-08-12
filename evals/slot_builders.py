@@ -17,7 +17,8 @@ from __future__ import annotations
 import torch
 
 CONDITIONS = ("per_offset", "pooled_identical", "slot0_only", "no_slot0",
-              "shuffled_slots", "diff", "centered", "deflated", "gs")
+              "shuffled_slots", "diff", "centered", "deflated", "gs",
+              "keep0_deflate_rest", "keep0_gs_rest")
 
 
 def sign_canonical_qr(M: torch.Tensor) -> torch.Tensor:
@@ -98,4 +99,28 @@ def build_slots(cond: str, h42: torch.Tensor, jbar, jpool, *, k: int,
         # noise-dominated residuals that norm-matching then amplifies to full
         # residual scale.
         return sign_canonical_qr(per)[:k] * per.norm(dim=-1, keepdim=True)
+    if cond in ("keep0_deflate_rest", "keep0_gs_rest"):
+        # What the full condition set implies. Evidence:
+        #   per_offset  0.289  slot 0 intact + 7 near-duplicates  -> duplicates DROWN slot 0
+        #   slot0_only  0.544  slot 0 intact + 7 un-injected      -> slot 0 alone carries it
+        #   diff        0.586  slot 0 intact + 7 decorrelated     -> decorrelated extras are fine
+        #   centered    0.218  ALL slots stripped of the shared component -> slot 0 ruined
+        # So: leave slot 0 EXACTLY as J̄⁽⁰⁾h (its shared component is part of a
+        # valid affine approximation to an activation — the J̄ audit found
+        # h62 ≈ J̄h + b, and stripping b hurts readout), and decorrelate only
+        # slots 1..k-1. Unlike "diff" this never mixes two horizons, so slot d
+        # still means "the transport to horizon d".
+        out = [per[0]]
+        if cond == "keep0_deflate_rest":
+            if not meandirs:
+                raise ValueError("keep0_deflate_rest requires meandirs")
+            for d in range(1, k):
+                md = meandirs[d]
+                md = md / (md.norm() + 1e-9)
+                v = per[d]
+                out.append(v - (v @ md) * md)
+        else:
+            rest = sign_canonical_qr(per[1:])[: k - 1] * per[1:].norm(dim=-1, keepdim=True)
+            out.extend(rest[i] for i in range(k - 1))
+        return torch.stack(out)
     raise ValueError(f"unknown condition {cond!r}")

@@ -42,6 +42,13 @@ def mean_of(shards: list[dict]) -> torch.Tensor:
     return acc / total
 
 
+def _f64(x: torch.Tensor) -> torch.Tensor:
+    """fp64 for reductions: fp32 accumulation over 26M elements costs ~0.2% on
+    Frobenius norms and can push a cosine above 1.0 (the audit measured
+    half_split_cosine = 1.0011 from this)."""
+    return x.double()
+
+
 def effective_rank(J: torch.Tensor, var_frac: float = 0.99) -> int:
     s = torch.linalg.svdvals(J.cuda() if torch.cuda.is_available() else J).cpu()
     cum = (s**2).cumsum(0) / (s**2).sum()
@@ -61,11 +68,11 @@ def main() -> None:
     for d in range(n_offsets):
         Jd = J[d]
         cos = torch.nn.functional.cosine_similarity(
-            J_a[d].flatten(), J_b[d].flatten(), dim=0
+            _f64(J_a[d]).flatten(), _f64(J_b[d]).flatten(), dim=0
         ).item() if len(shards) > 1 else float("nan")
         entry = {
             "delta": d,
-            "fro_norm": Jd.norm().item(),
+            "fro_norm": _f64(Jd).norm().item(),
             "effective_rank_99": effective_rank(Jd),
             "half_split_cosine": cos,
         }
