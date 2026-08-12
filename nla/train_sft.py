@@ -246,7 +246,7 @@ def ar_debug_stats(pred, gold, mse_scale_f):
 
 @torch.no_grad()
 def av_generate_samples(model, tokenizer, rows, cfg, device, *,
-                        max_new_tokens=256):
+                        max_new_tokens=256, n_slots=1):
     """Generate explanations for a few fixed activations (AV debug table).
 
     Returns list of dicts: {idx, gen_len, explanation}.
@@ -264,7 +264,8 @@ def av_generate_samples(model, tokenizer, rows, cfg, device, *,
             msgs, tokenize=False, add_generation_prompt=True, enable_thinking=False)
         ids = tokenizer.encode(ptxt, add_special_tokens=False)
         pt = torch.tensor([ids], dtype=torch.long, device=device)
-        act = torch.tensor(row["activation_vector"], dtype=torch.float32).unsqueeze(0).to(device)
+        act = torch.tensor(row["activation_vector"], dtype=torch.float32)
+        act = act.view(n_slots, -1).to(device)  # n_slots=1 -> [1, d], unchanged
         if vref is not None:
             vref[0] = act
         try:
@@ -446,7 +447,7 @@ def build_lr_lambda(warmup_steps, total_steps, min_lr_ratio):
 
 @torch.no_grad()
 def heldout_av_ce(model, tokenizer, rows, cfg, vectors_ref, device, *,
-                  max_len=1024, micro_batch=16):
+                  max_len=1024, micro_batch=16, n_slots=1):
     """Held-out AV val loss: mean token-CE on response tokens over doc-disjoint
     held-out AV rows — the SAME per-response-token CE the AV trains on, so it's
     directly comparable to the train `loss` (train loss is a memorization proxy;
@@ -456,7 +457,7 @@ def heldout_av_ce(model, tokenizer, rows, cfg, vectors_ref, device, *,
         chunk = rows[cs:cs + micro_batch]
         ids, attn, loss_mask, v_batch = _av_prepare_chunk(
             chunk, tokenizer, cfg.injection_char, device,
-            max_len=max_len)
+            max_len=max_len, n_slots=n_slots)
         vectors_ref[0] = v_batch
         try:
             logits = model(input_ids=ids, attention_mask=attn).logits.float()
@@ -473,8 +474,13 @@ def heldout_av_ce(model, tokenizer, rows, cfg, vectors_ref, device, *,
     return (tot_loss / max(tot_tok, 1)), len(rows)
 
 
-def _av_prepare_chunk(rows, tokenizer, inject_char, device, max_len=1024):
-    """Return (input_ids, attn, loss_mask, v_batch) — all [B, T] (or [B, d])."""
+def _av_prepare_chunk(rows, tokenizer, inject_char, device, max_len=1024,
+                      n_slots=1):
+    """Return (input_ids, attn, loss_mask, v_batch) — all [B, T] (or [B*n_slots, d]).
+
+    n_slots > 1: each row's activation_vector holds n_slots*d floats (slot-major),
+    the prompt contains n_slots consecutive markers, and v_batch is reshaped to
+    [B*n_slots, d] — the row-major order karvonen_inject_in_residual consumes."""
     full_ids_list = []
     prompt_lens = []
     for row in rows:
@@ -518,6 +524,12 @@ def _av_prepare_chunk(rows, tokenizer, inject_char, device, max_len=1024):
         np.stack([r["activation_vector"] for r in rows]),
         dtype=torch.float32, device=device,
     )
+    if n_slots > 1:
+        assert v_batch.shape[1] % n_slots == 0, (
+            f"activation_vector dim {v_batch.shape[1]} not divisible by "
+            f"n_slots={n_slots}"
+        )
+        v_batch = v_batch.view(bs * n_slots, v_batch.shape[1] // n_slots)
     return batch_ids, attn, loss_mask, v_batch
 
 
@@ -651,6 +663,11 @@ def main():
                         "from_pretrained). --no-strip-final-norm reproduces "
                         "pre-2026-06 checkpoints. Recorded in ar_meta.json.")
     p.add_argument("--max-len", type=int, default=1024)
+    p.add_argument("--n-slots", type=int, default=1,
+                   help="AV multi-slot injection: activation_vector holds "
+                        "n_slots*d floats (slot-major) and the prompt contains "
+                        "n_slots consecutive markers; each slot is Karvonen-"
+                        "injected at its own marker position")
     p.add_argument("--lr", type=float, default=None,
                    help="If omitted: AV-mode default 1e-4 (best for a 1-epoch warm-start "
                         "in our sweeps), AR-mode default 2e-5.")
@@ -1211,7 +1228,7 @@ def main():
             if args.mode == "av":
                 ids, attn, loss_mask, v_batch = _av_prepare_chunk(
                     chunk_rows, tokenizer, cfg.injection_char, device,
-                    max_len=args.max_len,
+                    max_len=args.max_len, n_slots=args.n_slots,
                 )
                 # vectors_ref stays set through .backward() below: AV mode runs
                 # gradient checkpointing BY DEFAULT, the backward-time recompute
@@ -1355,6 +1372,7 @@ def main():
                     samps = av_generate_samples(
                         model, tokenizer, sample_rows, cfg, device,
                         max_new_tokens=args.sample_max_new_tokens,
+                        n_slots=args.n_slots,
                     )
                 for s in samps:
                     sample_table_data.append([step, s["idx"],
@@ -1397,7 +1415,7 @@ def main():
             with amp():
                 h_ce, h_n = heldout_av_ce(
                     model, tokenizer, heldout_av_rows, cfg, vectors_ref, device,
-                    max_len=args.max_len)
+                    max_len=args.max_len, n_slots=args.n_slots)
             model.train()
             log["heldout_loss"] = h_ce
             log["heldout_ppl"] = math.exp(h_ce) if h_ce < 30 else float("inf")
