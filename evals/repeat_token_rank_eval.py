@@ -98,6 +98,11 @@ def main() -> None:
     remaining_rank_by_feed = {
         col: [[] for _ in range(args.max_tokens)] for col in feed_cols
     }
+    cross_phrase_rank_by_feed = {
+        col: [[[] for _ in range(args.max_tokens)]
+              for _ in range(args.max_tokens)]
+        for col in feed_cols
+    }
     remaining_count_by_position = [[] for _ in range(args.max_tokens)]
 
     for b0 in range(0, len(rows), args.batch_size):
@@ -140,6 +145,18 @@ def main() -> None:
                     )
                     if col == feed_cols[0]:
                         remaining_count_by_position[j].append(len(remaining_ids))
+                    # At output position j, rank every one of the held-out
+                    # future words k within the same 40-word phrase.  A reader
+                    # that represents order should make word k peak at j == k;
+                    # a proximity/bag-of-words reader need not.
+                    phrase_scores = pred[i, j, phrase_ids]
+                    future_scores = phrase_scores[anchor:anchor + len(ref)]
+                    cross_ranks = (
+                        (phrase_scores.unsqueeze(-1) > future_scores.unsqueeze(0))
+                        .sum(0).add(1).tolist()
+                    )
+                    for k, rank in enumerate(cross_ranks):
+                        cross_phrase_rank_by_feed[col][j][k].append(int(rank))
             del logits, pred, ranks, nll
         print(f"[rank] {min(b0 + len(batch), len(rows))}/{len(rows)}", flush=True)
 
@@ -157,6 +174,14 @@ def main() -> None:
             "phrase_rank_by_position": phrase_rank_by_feed[col],
             "remaining_phrase_rank_by_position": remaining_rank_by_feed[col],
             "remaining_phrase_candidate_count_by_position": remaining_count_by_position,
+            "cross_phrase_rank_by_output_and_target": cross_phrase_rank_by_feed[col],
+            "cross_phrase_mrr_by_output_and_target": [
+                [
+                    float(np.mean(1.0 / np.asarray(rs))) if rs else None
+                    for rs in output_row
+                ]
+                for output_row in cross_phrase_rank_by_feed[col]
+            ],
             "summary_by_position": [
                 {
                     "position": j + 1,
