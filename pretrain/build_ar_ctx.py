@@ -34,7 +34,11 @@ def main():
     ap.add_argument("--val-frac", type=float, default=0.04)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--base-model", default="Qwen/Qwen3.6-27B")
+    ap.add_argument("--summary-token", action="store_true",
+                    help="end the AR prompt with the literal <|summary|> token (for --ar-summary-token read-anchor training)")
     a = ap.parse_args()
+    tmpl = ("Summary of the following text: <text>{explanation}</text><|summary|>"
+            if a.summary_token else TEMPLATE)
     N = a.full_cap if a.ctx_tokens == "full" else int(a.ctx_tokens)
     tok = AutoTokenizer.from_pretrained(a.base_model, trust_remote_code=True)
     rng = random.Random(a.seed)
@@ -73,7 +77,7 @@ def main():
                 if is_val(docs[i], a.val_frac):
                     ho_r.append(expl); ho_i.append(i)
                 else:
-                    tr_p.append(TEMPLATE.format(explanation=expl)); tr_i.append(i)
+                    tr_p.append(tmpl.format(explanation=expl)); tr_i.append(i)
             if tr_i:
                 sub = t.take(tr_i)
                 wtr.write_table(pa.table({

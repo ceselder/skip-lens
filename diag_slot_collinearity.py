@@ -62,8 +62,12 @@ for r in rows:
         .reshape(16, -1)[:K].astype(np.float32)).to(dev)
     avg = torch.einsum("kij,j->ki", Jbar, h)
     diff = torch.stack([avg[0]] + [avg[d] - avg[d - 1] for d in range(1, K)])
-    q, _ = torch.linalg.qr(avg.T)          # columns = orthonormal basis of slot span
-    gs = q.T[:K] * avg.norm(dim=-1, keepdim=True)
+    # sign-canonicalized QR (raw Q columns are sign-arbitrary, so slot
+    # directions would flip vs classical Gram-Schmidt on ~half of inputs)
+    q, r = torch.linalg.qr(avg.T)
+    sgn = torch.sign(torch.diagonal(r))
+    sgn = torch.where(sgn == 0, torch.ones_like(sgn), sgn)
+    gs = (q * sgn).T[:K] * avg.norm(dim=-1, keepdim=True)
     for name, S in (("local", loc), ("avg", avg), ("diff", diff), ("gs", gs)):
         p, to0, er = slot_stats(S)
         acc[name]["pair"].append(p)

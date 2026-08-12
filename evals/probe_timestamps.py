@@ -12,6 +12,7 @@ commentary rather than next-text. This checks whether the multi-slot lens
 surfaces the same.
 """
 import argparse
+import re
 import json
 
 import numpy as np
@@ -69,6 +70,10 @@ ap.add_argument("--jbar-dir", required=True)
 ap.add_argument("--base-ckpt", default="Qwen/Qwen3.6-27B")
 ap.add_argument("--n-ao", type=int, default=4)
 ap.add_argument("--rollout-len", type=int, default=20)
+ap.add_argument("--center", action="store_true",
+                help="subtract the corpus-mean h42 before transporting (removes "
+                     "the context-independent component that makes averaged "
+                     "transports nearly position-invariant)")
 ap.add_argument("--out", default="/workspace/results/multislot_eval/timestamp_probe.json")
 args = ap.parse_args()
 dev = "cuda"
@@ -88,6 +93,11 @@ torch.set_grad_enabled(False)
 Jbar = [torch.from_numpy(np.load(
     f"{args.jbar_dir}/Jbar_L{SRC}_to_L62_off{d}.npy")).float().to(dev)
     for d in range(K)]
+HBAR = (torch.from_numpy(np.load(f"{args.jbar_dir}/hbar_L{SRC}.npy")).float().to(dev)
+        if args.center else None)
+if args.center:
+    print(f"[ts] CENTERED mode: subtracting corpus-mean h42 (||hbar||="
+          f"{float(HBAR.norm()):.1f})", flush=True)
 
 grab = {}
 base_causal(model).model.layers[SRC].register_forward_hook(
@@ -102,7 +112,8 @@ prompt_ids = torch.tensor([tok.encode(pstr, add_special_tokens=False)],
 
 
 def readout_at(h42):
-    slots = torch.stack([Jbar[d] @ h42 for d in range(K)])  # [K, d]
+    x = (h42 - HBAR) if HBAR is not None else h42
+    slots = torch.stack([Jbar[d] @ x for d in range(K)])  # [K, d]
     B = args.n_ao
     ids = prompt_ids.repeat(B, 1)
     vref[0] = slots.float().repeat(B, 1).contiguous()
@@ -116,23 +127,38 @@ def readout_at(h42):
             for x in g]
 
 
-# tokenize transcript, forward base model once, grab h42 everywhere
-ids = tok(TRANSCRIPT, return_tensors="pt", truncation=True,
-          max_length=1024).input_ids.to(dev)
+# tokenize transcript (with char offsets), forward base model once, grab h42
+enc = tok(TRANSCRIPT, return_tensors="pt", truncation=True, max_length=1024,
+          return_offsets_mapping=True)
+ids = enc.input_ids.to(dev)
+offsets = enc["offset_mapping"][0].tolist()
 with model.disable_adapter():
     model(input_ids=ids)
 H = grab[SRC][0].float()  # [T, d]
 
-# find '-' and ':' tokens that sit inside a "Timestamp:" line
+# Target spans, by character range: every "Timestamp: ..." line (the delimiters
+# inside the date/time), plus each "</email>" boundary — the delimiter class
+# where prior work found situational commentary rather than next-text.
+spans = []
+for m in re.finditer(r"Timestamp: *[0-9T:\-]+", TRANSCRIPT):
+    spans.append(("timestamp", m.start(), m.end()))
+for m in re.finditer(r"</email>", TRANSCRIPT):
+    spans.append(("email_end", m.start(), m.end()))
+for m in re.finditer(r"decommission\w*|Decommission\w*|wipe|no recovery", TRANSCRIPT):
+    spans.append(("threat_word", m.start(), m.end()))
+
 toks = [tok.decode([t]) for t in ids[0].tolist()]
 targets = []
-for i, s in enumerate(toks):
-    st = s.strip()
-    if st in ("-", ":") or st in ("T",):
-        # context window to confirm it's in a timestamp (digits nearby)
-        window = "".join(toks[max(0, i - 4):i + 4])
-        if any(c.isdigit() for c in window) and "20" in "".join(toks[max(0, i - 8):i + 2]):
-            targets.append((i, st, "".join(toks[max(0, i - 3):i + 4]).replace("\n", " ")))
+for kind, s0, s1 in spans:
+    for i, (a, b) in enumerate(offsets):
+        if a == b:                       # special tokens have empty spans
+            continue
+        if a >= s0 and b <= s1:
+            st = toks[i].strip()
+            if kind == "timestamp" and st not in ("-", ":", "T"):
+                continue                 # only the delimiters inside the stamp
+            ctx = TRANSCRIPT[max(0, a - 26):b + 8].replace("\n", " ")
+            targets.append((i, f"{kind}:{st or repr(toks[i])}", ctx))
 
 model.set_adapter("msA")
 out = []

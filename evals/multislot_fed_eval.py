@@ -28,6 +28,7 @@ from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from fl_common import base_causal, lens_topk
+from slot_builders import CONDITIONS, build_slots
 from nla.datagen.injection_tokens import find_injection_token
 from nla.schema import compute_canonical_neighbors
 from nla.utils.hooks import register_karvonen_hook
@@ -84,6 +85,18 @@ Jpool = torch.from_numpy(np.load(os.path.join(
     f"Jbar_L{args.src_layer}_to_L{args.tgt_layer}_offpooled.npy"))).float().to(dev)
 print(f"[ms] loaded {len(Jbar)} per-offset Jbar + pooled", flush=True)
 
+# centering assets (optional: only needed for the centered/deflated conditions)
+_hb = os.path.join(args.jbar_dir, f"hbar_L{args.src_layer}.npy")
+HBAR = (torch.from_numpy(np.load(_hb)).float().to(dev) if os.path.exists(_hb)
+        else None)
+MEANDIR = {}
+for d in range(K):
+    _md = os.path.join(args.jbar_dir, f"meandir_off{d}.npy")
+    if os.path.exists(_md):
+        MEANDIR[d] = torch.from_numpy(np.load(_md)).float().to(dev)
+print(f"[ms] centering assets: hbar={'yes' if HBAR is not None else 'NO'} "
+      f"meandirs={len(MEANDIR)}", flush=True)
+
 grab = {}
 base_causal(model).model.layers[args.src_layer].register_forward_hook(
     lambda m, i, o: grab.__setitem__(
@@ -132,34 +145,9 @@ def gen_inputs(ids):
 
 
 def slots_for(cond, h42):
-    per = torch.stack([Jbar[d] @ h42 for d in range(K)])  # [K, d]
-    if cond == "per_offset":
-        return per
-    if cond == "pooled_identical":
-        return (Jpool @ h42).expand(K, -1).contiguous()
-    if cond == "slot0_only":
-        s = torch.zeros_like(per)
-        s[0] = per[0]
-        return s
-    if cond == "no_slot0":
-        s = per.clone()
-        s[0] = 0
-        return s
-    if cond == "shuffled_slots":
-        perm = (torch.arange(K) + K // 2) % K
-        return per[perm]
-    if cond == "diff":
-        # DIFFERENTIAL slots: slot d carries what horizon d adds over d-1.
-        # Averaging collapses the raw J̄⁽ᐞ⁾h onto one shared direction
-        # (measured mean pairwise cos 0.86); differencing restores the slot
-        # diversity the decoder trained on (0.26 vs local 0.29).
-        return torch.stack([per[0]] + [per[d] - per[d - 1] for d in range(1, K)])
-    if cond == "gs":
-        # Gram-Schmidt across slots: perfectly decorrelated (cos 0.00), each
-        # slot rescaled to its original norm.
-        q, _ = torch.linalg.qr(per.T)
-        return q.T[:K] * per.norm(dim=-1, keepdim=True)
-    raise ValueError(cond)
+    """Delegates to evals/slot_builders.py — one home for slot construction,
+    shared with the playground and covered by tests."""
+    return build_slots(cond, h42, Jbar, Jpool, k=K, hbar=HBAR, meandirs=MEANDIR)
 
 
 def brollout_slots(slots, n, max_new, temp=0.7):
