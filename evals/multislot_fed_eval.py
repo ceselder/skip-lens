@@ -148,6 +148,17 @@ def slots_for(cond, h42):
     if cond == "shuffled_slots":
         perm = (torch.arange(K) + K // 2) % K
         return per[perm]
+    if cond == "diff":
+        # DIFFERENTIAL slots: slot d carries what horizon d adds over d-1.
+        # Averaging collapses the raw J̄⁽ᐞ⁾h onto one shared direction
+        # (measured mean pairwise cos 0.86); differencing restores the slot
+        # diversity the decoder trained on (0.26 vs local 0.29).
+        return torch.stack([per[0]] + [per[d] - per[d - 1] for d in range(1, K)])
+    if cond == "gs":
+        # Gram-Schmidt across slots: perfectly decorrelated (cos 0.00), each
+        # slot rescaled to its original norm.
+        q, _ = torch.linalg.qr(per.T)
+        return q.T[:K] * per.norm(dim=-1, keepdim=True)
     raise ValueError(cond)
 
 
