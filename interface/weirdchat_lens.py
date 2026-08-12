@@ -6,11 +6,9 @@ INDEPENDENTLY:
   * the JACOBIAN   J_{L->62}  for any source layer L that has a matrix (or "none")
   * the LM HEAD    the model's own W_U, or a fitted horizon-k head A_k
 
-and read the lens out at every position. When ``BITTER_CKPT`` is provided,
-layer 42 also exposes the learned activation-conditioned Bitter transport next
-to the ordinary mean J-lens:
+and read the lens out at every position:
 
-    lens(h_L) = softmax( W_U . norm( A_k . transport(h_L) ) )
+    lens(h_L) = softmax( W_U . norm( A_k . ( J_{L->62} . h_L ) ) )
 
 Both A_k and every J target block 62, so the head x Jacobian cross-product is valid
 for every source layer. Setting head = "LM head" and J = on reproduces the ordinary
@@ -66,8 +64,7 @@ print(f"[wc] J source layers {JLAYERS} -> block {TARGET_L}", flush=True)
 print("[wc] loading model ...", flush=True)
 tok = AutoTokenizer.from_pretrained(BASE)
 model = AutoModelForCausalLM.from_pretrained(
-    BASE, dtype=torch.bfloat16, attn_implementation="sdpa", device_map={"": 0}
-).eval()
+    BASE, dtype=torch.bfloat16, attn_implementation="sdpa").to(dev).eval()
 tm = resolve_text_model(model)
 W_U = model.lm_head.weight.detach()
 GAIN = norm_gain(model).to(dev)
@@ -76,29 +73,6 @@ print(f"[wc] model ready. d={W_U.shape[1]} V={W_U.shape[0]}", flush=True)
 
 JMATS = {L: torch.from_numpy(np.load(os.path.join(JDIR, f"J_L{L}_to_L{TARGET_L}.npy"))
                              ).to(dev).to(torch.bfloat16) for L in JLAYERS}
-
-# Optional activation-conditioned L42->L62 transport. The direct checkpoint was
-# trained on RMS-normalized source states, so its matched mean-J control is
-# Jbar @ unit_rms(h), not the paper/raw Jbar @ h arm. Both are exposed in the UI.
-BITTER_CKPT = os.environ.get("BITTER_CKPT", "")
-BITTER_CODE = os.environ.get("BITTER_CODE", "/workspace-vast/celeste/bitter-lens")
-BITTER = None
-BITTER_LAYER = None
-BITTER_META = {}
-if BITTER_CKPT:
-    if BITTER_CODE not in sys.path:
-        sys.path.insert(0, BITTER_CODE)
-    from bitter_lens import load_transport
-    _payload = torch.load(BITTER_CKPT, map_location="cpu", weights_only=True)
-    BITTER_LAYER = int(_payload["config"]["source_layer"])
-    if BITTER_LAYER not in JMATS:
-        raise RuntimeError(f"Bitter source L{BITTER_LAYER} has no mean J matrix in {JDIR}")
-    BITTER, BITTER_META = load_transport(
-        BITTER_CKPT, JMATS[BITTER_LAYER].float(), map_location=dev
-    )
-    BITTER = BITTER.to(dev).eval()
-    print(f"[wc] Bitter Lens L{BITTER_LAYER}->{TARGET_L} loaded from {BITTER_CKPT} "
-          f"(step={BITTER_META.get('step', '?')})", flush=True)
 # R-lens transport matrices (RelP LRP rules). Same shape/use as J; feed R@h to skip-lens.
 RDIR = os.environ.get("RDIR", "")
 RMATS = {}
@@ -133,6 +107,7 @@ REPEAT25K_CKPT = os.environ.get("REPEAT25K_CKPT", "")   # repeat-after-me, 25k /
 CNLA_LH_CKPT = os.environ.get("CNLA_LH_CKPT", "")   # compositional-NLA long-horizon RL @ step 300 (default cNLA lens)
 L42M_CKPT = os.environ.get("L42M_CKPT", "")   # skip-lens L42-matched adapter
 L62MM_CKPT = os.environ.get("L62MM_CKPT", "")   # skip-lens L62-mismatch adapter (trained L62, fed L42)
+PASTLENS_CKPT = os.environ.get("PASTLENS_CKPT", "")   # pastlens: reconstruct the PRECEDING context (past-framed prompt)
 # selectable on-policy cNLA checkpoints for the playground dropdown (lazy-loaded)
 CNLA_CKPT_ROOTS = os.environ.get("CNLA_CKPT_ROOTS",
     "/workspace/cnla/skip-lens/ckpts/cnla_av_L62_big,/workspace/cnla/skip-lens/ckpts/cnla_longhorizon").split(",")
@@ -173,6 +148,8 @@ if AO_CKPT:
         PEFT.load_adapter(L42M_CKPT, adapter_name="l42m")
     if L62MM_CKPT:
         PEFT.load_adapter(L62MM_CKPT, adapter_name="l62mm")
+    if PASTLENS_CKPT:
+        PEFT.load_adapter(PASTLENS_CKPT, adapter_name="pastlens")
     import glob as _glob
     for _root in CNLA_CKPT_ROOTS:
         _root = _root.strip()
@@ -188,11 +165,22 @@ if AO_CKPT:
     _s = tok.apply_chat_template([{"role": "user", "content": ACTOR_TEMPLATE.format(injection_char=_inj_char)}],
                                  tokenize=False, add_generation_prompt=True, enable_thinking=False)
     _PT = torch.tensor([tok.encode(_s, add_special_tokens=False)], device=dev)
+    # pastlens was trained with a PAST-framed instruction (reconstruct the preceding context);
+    # generate it with that prompt, not the future one. Injection point is identical.
+    PAST_ACTOR_TEMPLATE = ("You are shown an internal activation vector captured from a language model "
+        "as it reads a passage of text. The vector, enclosed in <concept> tags, is "
+        "taken at one position and encodes the context the model has just read. "
+        "Output the text that immediately preceded this point.\n\n"
+        "<concept>{injection_char}</concept>")
+    _s_past = tok.apply_chat_template([{"role": "user", "content": PAST_ACTOR_TEMPLATE.format(injection_char=_inj_char)}],
+                                      tokenize=False, add_generation_prompt=True, enable_thinking=False)
+    _PT_PAST = torch.tensor([tok.encode(_s_past, add_special_tokens=False)], device=dev)
     print(f"[wc] future-lens adapters loaded: ao{' + naive' if NAIVE_CKPT else ''}{' + rl' if RL_CKPT else ''}{' + repeat' if REPEAT_CKPT else ''}{' + repeat25k' if REPEAT25K_CKPT else ''}{' + cnla_lh' if CNLA_LH_CKPT else ''}{' + l42m' if L42M_CKPT else ''}{' + l62mm' if L62MM_CKPT else ''}", flush=True)
     # map each pre-loaded named adapter's path so _ensure_adapter reuses it (never re-loads)
     for _pth, _an in [(AO_CKPT, "ao"), (NAIVE_CKPT, "naive"), (RL_CKPT, "rl"),
                       (REPEAT_CKPT, "repeat"), (REPEAT25K_CKPT, "repeat25k"),
-                      (CNLA_LH_CKPT, "cnla_lh"), (L42M_CKPT, "l42m"), (L62MM_CKPT, "l62mm")]:
+                      (CNLA_LH_CKPT, "cnla_lh"), (L42M_CKPT, "l42m"), (L62MM_CKPT, "l62mm"),
+                      (PASTLENS_CKPT, "pastlens")]:
         if _pth:
             _ADAPTER_BY_PATH[_norm_path(_pth)] = _an
             _PROTECTED.add(_an)
@@ -215,6 +203,8 @@ if L42M_CKPT:
     REGISTRY["L42-matched"] = {"default": L42M_CKPT}
 if L62MM_CKPT:
     REGISTRY["L62-mismatch"] = {"default": L62MM_CKPT}
+if PASTLENS_CKPT:
+    REGISTRY["pastlens"] = {"default": PASTLENS_CKPT}
 if CNLA_CKPTS:
     REGISTRY["cNLA"] = dict(sorted(CNLA_CKPTS.items()))
 elif CNLA_LH_CKPT:
@@ -228,7 +218,7 @@ if REGISTRY:
 def _brollout(activation, adapter, n=4, max_new=24, temp=0.7):
     """Inject a norm-matched activation and batch-generate n rollouts with the given adapter."""
     act = torch.as_tensor(activation, dtype=torch.float32, device=dev).view(1, -1)
-    B = max(1, n); ids = _PT.repeat(B, 1)
+    B = max(1, n); ids = (_PT_PAST if adapter == "pastlens" else _PT).repeat(B, 1)
     PEFT.set_adapter(adapter); PEFT._fl_vref[0] = act.expand(B, -1).contiguous()
     try:
         # FIXED-LENGTH generation (min==max): this DeltaNet/fla build recompiles the generate
@@ -292,28 +282,18 @@ def rms_gain(x):
     return unit_rms(x.float()) * GAIN
 
 
-def _transport(h, layer, mode):
-    """Map a raw source residual into the block-TARGET_L readout frame."""
-    hf = h.float()
-    if mode == "bitter":
-        if BITTER is None or layer != BITTER_LAYER:
-            raise HTTPException(404, f"Bitter Lens is only available at L{BITTER_LAYER}")
-        return BITTER.transform(hf)
-    if mode == "j_norm" and layer in JMATS:
-        return unit_rms(hf) @ JMATS[layer].float().T
-    if mode == "r" and layer in RMATS:
-        return hf @ RMATS[layer].float().T
-    if mode == "j" and layer in JMATS:
-        return hf @ JMATS[layer].float().T
-    return hf
-
-
 @torch.no_grad()
 def readout(h, head, use_j, layer, topk=10, feed=""):
     """h (T, d) raw residual at `layer`. Returns top-k ids + probs per position.
-    feed selects the transport into the block-62 frame before the LM head."""
+    feed selects the transport into the block-62 frame before the LM head:
+    'r' = R-lens (RelP), 'j' = Jacobian, 'raw' = none; '' falls back to use_j."""
+    z = h.to(torch.bfloat16)
     mode = feed or ("j" if use_j else "raw")
-    z = _transport(h, layer, mode)
+    if mode == "r" and layer in RMATS:
+        z = z @ RMATS[layer].T
+    elif mode == "j" and layer in JMATS:
+        z = z @ JMATS[layer].T
+    z = z.float()
     if head == "lm":
         hidden = z
         scale = 1.0
@@ -347,7 +327,7 @@ class ReadReq(BaseModel):
     use_j: bool = True
     head: str = "lm"
     topk: int = 10
-    feed: str = ""   # bitter / j_norm / j / r / raw; '' => use_j
+    feed: str = ""   # 'r' (R-lens) / 'j' (Jacobian) / 'raw'; '' => use_j
 
 
 app = FastAPI()
@@ -356,9 +336,7 @@ app = FastAPI()
 @app.get("/api/presets")
 def presets(_=Depends(require_auth)):
     return JSONResponse({"behaviors": PRESET_JSON, "layers": JLAYERS,
-                         "target": TARGET_L, "heads": sorted(HEADW),
-                         "bitter_layers": [BITTER_LAYER] if BITTER is not None else [],
-                         "bitter_meta": BITTER_META})
+                         "target": TARGET_L, "heads": sorted(HEADW)})
 
 
 @app.post("/api/run")
@@ -434,7 +412,7 @@ class AllReq(BaseModel):
     layer: int
     use_j: bool = True
     topk: int = 10        # the UI asks for a deeper list when de-duplicating
-    feed: str = ""        # bitter / j_norm / j / r / raw; '' => use_j
+    feed: str = ""        # 'r' (R-lens) / 'j' (Jacobian) / 'raw'; '' => use_j
 
 
 @app.post("/api/allheads")
@@ -473,7 +451,7 @@ class AoReq(BaseModel):
     max_new: int = 20
     cnla_ckpt: str = ""   # LEGACY: pick which cNLA checkpoint generates the verbalization
     lenses: list[str] | None = None   # LEGACY: which lenses to run; None/empty => all available
-    feed: str = ""        # pre-feed: bitter / j_norm / j / r / raw; "" => use_j
+    feed: str = ""        # pre-feed transform: "j" (Jacobian), "r" (R-lens), "raw"; "" => use_j
     slots: list[LensSlot] | None = None   # NEW: up to 3 (category, checkpoint) pairs to compare
 
 
@@ -490,8 +468,12 @@ def api_ao(r: AoReq, _=Depends(require_auth)):
     if not run:
         raise HTTPException(404, "run expired -- reload the transcript")
     h = run["acts"][r.layer][r.pos].float()
-    feed = r.feed or ("j" if r.use_j else "raw")
-    h = _transport(h, r.layer, feed)          # identical transform to the LM-head table
+    feed = r.feed or ("j" if r.use_j else "raw")   # pre-feed transform into the block-62 frame
+    if feed == "r" and r.layer in RMATS:
+        h = RMATS[r.layer].float() @ h        # R-lens (RelP LRP) transport L->62
+    elif feed == "j" and r.layer in JMATS:
+        h = JMATS[r.layer].float() @ h        # Jacobian transport L->62 (frame the AO was trained near)
+    # else raw h
     n, mx = max(1, min(int(r.n), 6)), max(4, min(int(r.max_new), 48))
     if r.slots is not None:                        # ---- NEW slot-comparison path ----
         out_slots = []

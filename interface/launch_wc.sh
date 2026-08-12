@@ -15,7 +15,6 @@ export REPEAT_SPAN4_CKPT=/workspace/cnla/adapters/repeat_span4_25k_iter1500  # e
 export CNLA_LH_CKPT=/workspace/cnla/skip-lens/ckpts/cnla_longhorizon/iter_000300
 export L42M_CKPT=/workspace/cnla/adapters/l42_matched
 export L62MM_CKPT=/workspace/cnla/adapters/l62_mismatch
+export PASTLENS_CKPT=/workspace/cnla/skip-lens/ckpts/pastlens_L62/iter_0012124   # pastlens (reconstruct read context)
 export RDIR=/workspace/cnla/results/rlens_official   # OFFICIAL R-lens (camilablank/workspace-lenses)
-export BITTER_CODE=/workspace-vast/celeste/bitter-lens
-export BITTER_CKPT=/workspace-vast/celeste/bitter-lens/runs/l42_direct_batch64_1m/best.pt
 exec /workspace/cnla_venv/bin/python weirdchat_lens.py
