@@ -1,0 +1,328 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Multi-slot Workspace Lens · multi-token lens</title><style>
+:root{--ink:#191919;--mut:#52514e;--fai:#87867F;--bg:#fcfcfb;--clay:#D97757;
+ --line:#e6e4dd;--user:#eef3fb;--asst:#fdf1ec}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+ font:14px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{padding:9px 16px;border-bottom:1px solid var(--line);display:flex;gap:13px;
+ align-items:center;flex-wrap:wrap;position:sticky;top:0;background:var(--bg);z-index:9}
+h1{font-size:15px;margin:0 10px 0 0;font-weight:650}
+label{font-size:12px;color:var(--mut);margin-right:4px}
+select,button,input,textarea{font:inherit;border:1px solid var(--line);border-radius:6px;
+ padding:5px 8px;background:#fff;color:var(--ink)}
+button{background:var(--clay);color:#fff;border:0;cursor:pointer;font-weight:600}
+button.ghost{background:#fff;color:var(--mut);border:1px solid var(--line);font-weight:500}
+button:disabled{opacity:.45;cursor:default}
+.wrap{display:grid;grid-template-columns:240px minmax(300px,1fr) minmax(940px,1120px);height:calc(100vh - 51px)}
+.poshd{margin-bottom:8px}.tokline{font-family:ui-monospace;font-size:12.5px;margin-top:3px}
+.nextline{font-size:11.5px;color:var(--mut);margin-top:4px}.srcline{font-size:11px;color:var(--fai);margin-top:4px}
+.mathd{margin-top:13px;padding:6px 0 4px;border-bottom:1px solid var(--line);font-size:11px;font-weight:700;
+ text-transform:uppercase;letter-spacing:.04em;color:var(--mut)}
+.mathd.ao{border-bottom:0;border-top:2px solid var(--clay);color:var(--clay);margin-top:15px;padding-top:9px}
+.mrow{display:grid;grid-template-columns:150px 1fr 1fr;gap:8px;padding:6px 0;border-top:1px solid var(--line);align-items:start}
+.mrow:first-of-type{border-top:0}
+.mname{font-size:11px;color:var(--mut);font-weight:600;line-height:1.35}
+.mcell{font-size:13px;line-height:1.75}
+.clab{display:block;font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:var(--fai);margin-bottom:2px}
+.tk{display:inline-block;margin:0 5px 2px 0;font-family:ui-monospace;font-size:11px}.tk i{color:var(--mut)}.tk.lo{opacity:.4}
+.none{color:var(--fai)}
+.side,.mid,.insp{overflow:auto}
+.side{border-right:1px solid var(--line);padding:11px}
+.mid{padding:14px 18px}
+.insp{border-left:1px solid var(--line);padding:14px}
+.tlist div{padding:6px 8px;border-radius:6px;cursor:pointer;font-size:12.3px;
+ border:1px solid transparent;margin-bottom:2px}
+.tlist div:hover{background:#f4f2ec;border-color:var(--line)}
+.tlist div.on{background:#fdf1ec;border-color:var(--clay)}
+.badge{display:inline-block;padding:0 5px;border-radius:99px;font-size:10px;
+ font-weight:700;margin-right:4px;vertical-align:1px}
+.b-hi{background:#ffe9a8;color:#7a5b00}.b-m{background:#ffd9cc;color:#8a2d00}
+.turn{border-radius:9px;padding:10px 12px;margin-bottom:12px;border:1px solid var(--line)}
+.turn.u{background:var(--user)}.turn.a{background:var(--asst)}
+.aohd{margin-top:13px;padding-top:9px;border-top:2px solid var(--clay);font-size:12px;font-weight:700;color:var(--clay)}
+.aoroll{font-family:ui-monospace,monospace;font-size:13px;line-height:1.55;padding:4px 0;border-top:1px solid var(--line);color:var(--ink)}
+.mrow.aorow{display:block}
+.mrow.aorow .mname{margin-bottom:5px;font-size:12px}
+.mrow.aorow .aoroll{width:100%;white-space:pre-wrap}
+.aoroll:first-of-type{border-top:0}
+.turn h4{margin:0 0 7px;font-size:11px;letter-spacing:.07em;text-transform:uppercase;
+ color:var(--mut);font-weight:700}
+.tok{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;white-space:pre-wrap;
+ cursor:pointer;border-radius:3px;padding:1px 0}
+.tok:hover{background:#ffe9a8;box-shadow:0 0 0 2px #ffe9a8}
+.tok.sel{background:var(--clay);color:#fff;box-shadow:0 0 0 2px var(--clay)}
+.hrow{margin-bottom:9px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.hname{font-size:11px;font-weight:700;color:var(--mut);margin-bottom:3px}
+.hname .lm{color:var(--clay)}
+.tk{display:inline-block;margin:0 6px 3px 0;font-family:ui-monospace,Menlo,monospace;
+ font-size:12px}
+.tk b{font-weight:600}.tk i{color:var(--fai);font-style:normal;font-size:10.5px}
+.tk.lo{opacity:.38}.tk.lo b{font-weight:400}
+.dup{color:var(--fai);font-size:10.5px;font-style:italic;margin-left:3px}
+#slots select.slot-cat{border-left:3px solid var(--line);margin-left:6px}
+#slots select.slot-cat[data-slot="0"]{border-left-color:#D97757}
+#slots select.slot-cat[data-slot="1"]{border-left-color:#2166ac}
+#slots select.slot-cat[data-slot="2"]{border-left-color:#0f8b8d}
+.none{color:var(--fai);font-size:11.5px;font-style:italic}
+small{color:var(--mut)}
+.expl{font-size:11.5px;color:var(--mut);background:#f4f2ec;border-radius:6px;
+ padding:7px 9px;margin-bottom:10px}
+a{color:var(--clay)}
+@media (max-width:820px){
+  .wrap{grid-template-columns:1fr;height:auto}
+  .side,.mid,.insp{overflow:visible;border:0;padding:11px}
+  .side{border-bottom:1px solid var(--line);max-height:34vh;overflow:auto}
+  .insp{border-top:3px solid var(--clay)}
+  .mrow{grid-template-columns:1fr;gap:2px}
+  .mname{margin-bottom:3px}
+  body{font:15px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .tok{font-size:15px;padding:2px 0}
+  .mcell,.aoroll{font-size:13px}
+  header{padding:8px 11px;gap:7px}
+  h1{flex-basis:100%;margin:0 0 3px}
+  select,button,input{padding:6px 9px}
+}
+</style></head><body>
+<header>
+ <h1>Multi-slot Workspace Lens · multi-token lens</h1>
+ <span><label>layer</label><select id="layer"></select></span>
+ <span><label>Jacobian</label><select id="usej">
+  <option value="1">J_L&rarr;62 (on)</option><option value="0">off (raw)</option>
+ </select></span>
+ <span><label>show</label><input id="topk" type="number" value="8" min="1" max="30"
+   style="width:56px"></span>
+ <span id="slots" title="3 comparison slots — each picks a (lens category · checkpoint) pair; every feed row renders one rollout per slot">
+   <label>compare</label>
+   <select class="slot-cat" data-slot="0"></select><select class="slot-ckpt" data-slot="0" style="max-width:150px"></select><input class="slot-tok" data-slot="0" type="number" min="1" max="256" placeholder="tok" title="tokens to generate for this slot (blank = auto: cNLA 128, else 14)" style="width:48px">
+   <select class="slot-cat" data-slot="1"></select><select class="slot-ckpt" data-slot="1" style="max-width:150px"></select><input class="slot-tok" data-slot="1" type="number" min="1" max="256" placeholder="tok" title="tokens to generate for this slot (blank = auto)" style="width:48px">
+   <select class="slot-cat" data-slot="2"></select><select class="slot-ckpt" data-slot="2" style="max-width:150px"></select><input class="slot-tok" data-slot="2" type="number" min="1" max="256" placeholder="tok" title="tokens to generate for this slot (blank = auto)" style="width:48px">
+ </span>
+ <span><label title="hide tokens already shown at an earlier row">
+   <input type="checkbox" id="dedup"> new only</label></span>
+ <span><label title="soft-grey tokens below 1% probability">
+   <input type="checkbox" id="fade" checked> fade &lt;1%</label></span>
+ <span id="status"><small>pick a transcript &rarr;</small></span>
+</header>
+<div class="wrap">
+ <div class="side">
+  <label>behaviour</label>
+  <select id="beh" style="width:100%;margin-bottom:7px"></select>
+  <div class="tlist" id="tlist"></div>
+  <hr style="border:0;border-top:1px solid var(--line);margin:11px 0">
+  <div class="expl"><b>horizon convention.</b> k is measured from the clicked token:
+   <b>k=1 = the next token</b> (so it is a tuned lens, not multi-token — treat it as the
+   control), <b>k=2 = the token after next</b>, k=3..5 further ahead. The multi-token
+   story lives in k&ge;2.</div>
+  <label>or free text</label>
+  <textarea id="txt" style="width:100%;height:64px;resize:vertical"></textarea>
+  <div style="margin-top:5px;display:flex;gap:6px;align-items:center">
+   <label>gen <input id="ntok" type="number" value="40" min="0" max="200"
+     style="width:58px"></label>
+   <button id="runb">run</button>
+  </div>
+  <label style="margin-top:10px;display:block">or custom transcript</label>
+  <textarea id="cuser" placeholder="user turn…"
+    style="width:100%;height:48px;resize:vertical"></textarea>
+  <textarea id="casst" placeholder="assistant turn — leave blank to let the model generate it; fill to teacher-force &amp; lens its tokens"
+    style="width:100%;height:48px;resize:vertical;margin-top:4px"></textarea>
+  <button id="runt" style="margin-top:5px">run transcript</button>
+ </div>
+
+ <div class="mid">
+  <div id="expl"></div>
+  <div id="conv"><small>Click any token — in the user prompt or in the model's reply —
+   to read the lens at that activation.</small></div>
+ </div>
+
+ <div class="insp">
+  <div id="insp"><small>no token selected</small></div>
+ </div>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+let META=null, RUN=null, CUR=null, SEL=null;
+let aoGen=0;   // bumped on each click; a newer click supersedes an in-flight trained-lens loop
+async function api(p,b){const r=await fetch(p,{method:b?'POST':'GET',
+  headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):null});
+  if(!r.ok) throw new Error((await r.text()).slice(0,200)); return r.json();}
+async function apiT(p,b,ms){  // like api() but aborts after ms so a hung /api/ao never blocks forever
+  const ac=new AbortController(); const to=setTimeout(()=>ac.abort(),ms);
+  try{ const r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(b),signal:ac.signal});
+    if(!r.ok) throw new Error((await r.text()).slice(0,200)); return await r.json(); }
+  finally{ clearTimeout(to); }}
+const esc=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const vis=s=>s.replace(/\n/g,'↵\n').replace(/\t/g,'→');
+
+(async()=>{
+ META=await api('/api/presets');
+ $('#layer').innerHTML=META.layers.map(l=>`<option ${l==42?'selected':''}>${l}</option>`)
+   .join('')+`<option value="${META.target}">${META.target} (no J)</option>`;
+ const bs=Object.keys(META.behaviors);
+ $('#beh').innerHTML=bs.map(b=>`<option>${b}</option>`).join('');
+ $('#beh').onchange=fillList; fillList();
+})();
+
+function fillList(){
+ const ts=META.behaviors[$('#beh').value]||[];
+ $('#tlist').innerHTML=ts.map((t,i)=>{
+   const hi=t.highlight?'<span class="badge b-hi">HL</span>':'';
+   const m=t.match?'<span class="badge b-m">fired</span>':'';
+   return `<div data-i="${i}">${hi}${m}${esc((t.user||'').slice(0,110))}</div>`;}).join('');
+ [...$('#tlist').children].forEach(d=>d.onclick=()=>loadT(ts[+d.dataset.i],d));
+}
+
+async function loadT(t,el){
+ [...$('#tlist').children].forEach(x=>x.classList.remove('on'));
+ if(el) el.classList.add('on');
+ CUR=t; $('#status').innerHTML='<small>running model…</small>';
+ $('#expl').innerHTML = t.explanation
+   ? `<div class="expl"><b>Transluce judgment${t.match?' — behaviour fired':''}:</b>
+      ${esc(t.explanation)} ${t.url?`· <a href="${t.url}" target="_blank">weirdchat</a>`:''}</div>`
+   : '';
+ try{
+   RUN=await api('/api/run',{user:t.user,assistant:t.assistant,system:t.system||''});
+   drawConv(); $('#status').innerHTML=
+     `<small>${RUN.n_total} tokens · ${RUN.n_prompt} prompt / ${RUN.n_total-RUN.n_prompt} reply</small>`;
+ }catch(e){$('#status').innerHTML='<small style="color:#b00">'+e.message+'</small>';}
+}
+
+$('#runb').onclick=async()=>{
+ const v=$('#txt').value.trim(); if(!v) return;
+ CUR=null; $('#expl').innerHTML=''; $('#status').innerHTML='<small>running…</small>';
+ try{ RUN=await api('/api/run',{text:v,chat:true,max_new_tokens:+$('#ntok').value});
+   drawConv(); $('#status').innerHTML=`<small>${RUN.n_total} tokens</small>`;
+ }catch(e){$('#status').innerHTML='<small style="color:#b00">'+e.message+'</small>';}
+};
+
+$('#runt').onclick=async()=>{             // custom user (+ optional assistant) transcript
+ const u=$('#cuser').value.trim(), a=$('#casst').value.trim(); if(!u) return;
+ CUR=null; $('#expl').innerHTML=''; $('#status').innerHTML='<small>running…</small>';
+ // assistant given -> teacher-force it (lens its tokens); else generate the reply from the user turn
+ const body=a?{user:u,assistant:a,system:''}:{user:u,chat:true,max_new_tokens:+$('#ntok').value};
+ try{ RUN=await api('/api/run',body);
+   drawConv(); $('#status').innerHTML=
+     `<small>${RUN.n_total} tokens · ${RUN.n_prompt} prompt / ${RUN.n_total-RUN.n_prompt} reply</small>`;
+ }catch(e){$('#status').innerHTML='<small style="color:#b00">'+e.message+'</small>';}
+};
+
+function drawConv(){
+ const u=[],a=[];
+ RUN.tokens.forEach((t,i)=>{
+   const sp=`<span class="tok" data-p="${i}" title="pos ${i}">${esc(vis(t))}</span>`;
+   (i<RUN.n_prompt?u:a).push(sp);});
+ $('#conv').innerHTML=
+   `<div class="turn u"><h4>user prompt · ${RUN.n_prompt} tokens</h4>${u.join('')}</div>`
+  +`<div class="turn a"><h4>model reply · ${RUN.tokens.length-RUN.n_prompt} tokens</h4>${a.join('')}</div>`;
+ [...document.querySelectorAll('.tok')].forEach(s=>s.onclick=()=>{pick(+s.dataset.p,s);if(innerWidth<=820)$('#insp').scrollIntoView({behavior:'smooth',block:'start'});});
+}
+
+async function pick(pos,el){
+ document.querySelectorAll('.tok.sel').forEach(x=>x.classList.remove('sel'));
+ if(el) el.classList.add('sel'); SEL=pos;
+ $('#insp').innerHTML='<small>reading…</small>';
+ try{
+  const show=+$('#topk').value, fade=$('#fade').checked, L=+$('#layer').value;
+  const PEN=(META&&META.target)||62;
+  // Every arm uses the same frozen LM head. Bitter is compared with both its
+  // matched normalized mean-J baseline and the paper/raw mean-J lens.
+  const hasBitter=(META.bitter_layers||[]).includes(L);
+  const [dB,dJN,dJ,dRl,dR]=await Promise.all([
+    hasBitter?api('/api/allheads',{run_id:RUN.run_id,pos:pos,layer:L,feed:'bitter',topk:show}):Promise.resolve(null),
+    hasBitter?api('/api/allheads',{run_id:RUN.run_id,pos:pos,layer:L,feed:'j_norm',topk:show}):Promise.resolve(null),
+    api('/api/allheads',{run_id:RUN.run_id,pos:pos,layer:L,use_j:true, topk:show}),
+    api('/api/allheads',{run_id:RUN.run_id,pos:pos,layer:L,feed:'r',   topk:show}),
+    api('/api/allheads',{run_id:RUN.run_id,pos:pos,layer:L,use_j:false,topk:show})]);
+  const d=dJ;
+  let h=`<div class="poshd"><b>position ${pos}</b> <span class="badge ${d.is_assistant?'b-m':'b-hi'}">${d.is_assistant?'model reply':'user prompt'}</span>
+    <div class="tokline">token <b>${esc(vis(d.token))}</b></div>
+    <div class="nextline">actually followed by: <span class="mono">${esc(vis(d.actual_next.join('')))}</span></div>
+    <div class="srcline">source layer L${L} → block ${PEN}</div></div>`;
+  const HN={lm:'LM head — next token (logit / J-lens)',1:'k=1 · next',2:'k=2 · after-next',
+            3:'k=3 · 3 ahead',4:'k=4 · 4 ahead',5:'k=5 · 5 ahead'};
+  const rowsB={},rowsJN={},rowsJ={},rowsRL={},rowsR={};
+  if(dB)dB.rows.forEach(r=>rowsB[r.head]=r.top);
+  if(dJN)dJN.rows.forEach(r=>rowsJN[r.head]=r.top);
+  dJ.rows.forEach(r=>rowsJ[r.head]=r.top); dRl.rows.forEach(r=>rowsRL[r.head]=r.top); dR.rows.forEach(r=>rowsR[r.head]=r.top);
+  const cell=top=>(!top||!top.length)?'<span class="none">—</span>'
+    :top.slice(0,show).map(([t,p])=>`<span class="tk${fade&&p<0.01?' lo':''}"><b>${esc(vis(t))}</b> <i>${(p*100).toFixed(0)}%</i></span>`).join('');
+  h+=`<div class="mathd">frozen LM-head top tokens · Bitter vs matched mean-J vs paper J-lens</div>`;
+  Object.keys(rowsJ).forEach(hd=>{
+    h+=`<div class="mrow" style="grid-template-columns:140px ${hasBitter?'1fr 1fr ':''}1fr 1fr 1fr"><div class="mname">${HN[hd]||('k='+hd)}</div>`
+      +(hasBitter?`<div class="mcell"><span class="clab" style="color:#8b3fb2">Bitter Lens</span>${cell(rowsB[hd])}</div>`
+        +`<div class="mcell"><span class="clab" style="color:#2166ac">mean J · norm-matched</span>${cell(rowsJN[hd])}</div>`:'')
+      +`<div class="mcell"><span class="clab">J-lens</span>${cell(rowsJ[hd])}</div>`
+      +`<div class="mcell"><span class="clab" style="color:#0f8b8d">R-lens</span>${cell(rowsRL[hd])}</div>`
+      +`<div class="mcell"><span class="clab">logit (raw)</span>${cell(rowsR[hd])}</div></div>`;});
+  $('#insp').innerHTML=h;
+  // trained future-lens MATRIX: {J(h)@L, raw@L, raw@penult} x {AO, naive}, fired concurrently.
+  const cfgs=[];
+  if(hasBitter) cfgs.push({k:'bitter',lab:`L${L} (Bitter)`,layer:L,use_j:false,feed:'bitter'},
+                          {k:'jnorm',lab:`L${L} (mean J · norm-matched)`,layer:L,use_j:false,feed:'j_norm'});
+  cfgs.push({k:'jac',lab:`L${L} (paper J)`,layer:L,use_j:true,feed:'j'},
+            {k:'rl',lab:`L${L} (R)`,layer:L,use_j:false,feed:'r'},
+            {k:'raw',lab:`L${L} (raw)`,layer:L,use_j:false,feed:'raw'});
+  if(L!==PEN) cfgs.push({k:'pen',lab:`L${PEN}`,layer:PEN,use_j:false,feed:'raw'});
+  const w=document.createElement('div');
+  w.innerHTML=`<div class="mathd ao">🔮 trained future-lens · 3 comparison slots (header dropdowns) · 1 rollout each</div>`
+    +cfgs.map(c=>`<div class="mrow aorow" id="ao_${c.k}"><div class="mname">${c.lab}</div><div class="mcell aoroll">generating…</div></div>`).join('');
+  $('#insp').appendChild(w);
+  // Trained-lens rollouts: SEQUENTIAL within this click (backend LOCK also serializes across
+  // clicks), each with a 120s timeout so a GPU-contention stall never wedges the panel. A newer
+  // click bumps aoGen and abandons this loop. Each cell renders/ errors INDEPENDENTLY.
+  const myGen=++aoGen;
+  (async()=>{ for(const c of cfgs){
+    if(myGen!==aoGen) return;
+    const el=document.getElementById('ao_'+c.k); if(!el) continue;
+    try{
+      const a=await apiT('/api/ao',{run_id:RUN.run_id,pos:pos,layer:c.layer,use_j:c.use_j,n:1,max_new:14,feed:c.feed||'',slots:getSlots()},120000);
+      if(myGen!==aoGen) return;
+      const cells=(a.slots||[]).map((s,i)=>{
+        const col=SLOT_COLORS[i%SLOT_COLORS.length];
+        const body=s.error?`<i>⚠ ${esc(s.error)}</i>`:(esc((s.readout||[''])[0]||'')||'<i>(empty)</i>');
+        return `<div class="mcell aoroll" style="border-left:3px solid ${col};padding-left:6px"><span class="clab" style="color:${col}">${esc(s.cat)} · ${esc(s.ckpt)}</span>${body}</div>`;
+      }).join('')||'<div class="mcell aoroll none">no slots selected (registry still loading?)</div>';
+      el.innerHTML=`<div class="mname">${c.lab}</div>`+cells;
+    }catch(e){ if(myGen===aoGen) el.innerHTML=`<div class="mname">${c.lab}</div><div class="mcell" style="color:var(--fai)">⏱ GPU busy — timed out, click the token again</div>`; }
+  }})();
+ }catch(e){$('#insp').innerHTML='<small style="color:#b00">'+e.message+'</small>';}
+}
+['#layer','#usej','#topk','#dedup','#fade'].forEach(id=>$(id).onchange=()=>{if(SEL!==null)pick(SEL,
+  document.querySelector(`.tok[data-p="${SEL}"]`));});
+// --- comparison slots: 3 x (category, checkpoint) dropdown pairs fed by /api/registry ---
+const SLOT_COLORS=['#D97757','#2166ac','#0f8b8d'];
+let REG=null;   // {category: [ckpt labels...]}
+function getSlots(){
+  const out=[];
+  for(let i=0;i<3;i++){
+    const c=document.querySelector(`.slot-cat[data-slot="${i}"]`),
+          k=document.querySelector(`.slot-ckpt[data-slot="${i}"]`),
+          t=document.querySelector(`.slot-tok[data-slot="${i}"]`);
+    if(c&&k&&c.value&&k.value) out.push({cat:c.value,ckpt:k.value,max_new:(t&&t.value)?+t.value:0});
+  }
+  return out;
+}
+function fillCkpt(i,prefer){   // repopulate slot i's checkpoint dropdown from its category
+  const sc=document.querySelector(`.slot-cat[data-slot="${i}"]`),
+        sk=document.querySelector(`.slot-ckpt[data-slot="${i}"]`);
+  const cks=(REG&&REG[sc.value])||[];
+  sk.innerHTML=cks.map(c=>`<option>${esc(c)}</option>`).join('');
+  if(prefer&&cks.includes(prefer)) sk.value=prefer;
+}
+const rerun=()=>{if(SEL!==null)pick(SEL,document.querySelector(`.tok[data-p="${SEL}"]`));};
+(async()=>{try{
+  REG=(await api('/api/registry')).categories||{};
+  const cats=Object.keys(REG); if(!cats.length) return;
+  const defs=[['AO','default'],['naive-FL','default'],['cNLA',null]];  // slot defaults
+  document.querySelectorAll('.slot-cat').forEach((sc,i)=>{
+    sc.innerHTML=cats.map(c=>`<option>${esc(c)}</option>`).join('');
+    sc.value=(defs[i]&&cats.includes(defs[i][0]))?defs[i][0]:cats[i%cats.length];
+    fillCkpt(i,defs[i]?defs[i][1]:null);
+    sc.onchange=()=>{fillCkpt(i,null);rerun();};
+  });
+  document.querySelectorAll('.slot-ckpt').forEach(sk=>sk.onchange=rerun);
+  document.querySelectorAll('.slot-tok').forEach(t=>t.onchange=rerun);
+}catch(e){console.warn('registry load failed',e);}})();
+</script></body></html>

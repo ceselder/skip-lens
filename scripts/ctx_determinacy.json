@@ -1,0 +1,21 @@
+{
+  "ctx_tokens": [
+    0,
+    32,
+    128,
+    256
+  ],
+  "fve_corrected_pct": [
+    34.7,
+    70.7,
+    66.2,
+    63.6
+  ],
+  "cos": [
+    0.714,
+    0.884,
+    0.864,
+    0.853
+  ],
+  "note": "AR reconstruct L62 from span + N read-context tokens; 1 epoch each"
+}
