@@ -34,5 +34,11 @@ python -m evals.analyze_scaled_opd \
 python scripts/plot_scaled_opd.py \
   --analysis "$RESULTS/scaled_opd_analysis.json" \
   --out-dir "$RESULTS/report"
+python scripts/upload_scaled_opd_checkpoint.py \
+  --analysis "$RESULTS/scaled_opd_analysis.json" \
+  --quality "$RESULTS/quality_judged.json" \
+  --results "$RESULTS" \
+  --token-path /workspace-vast/celeste/.cache/huggingface/token \
+  --out "$RESULTS/uploaded_model.json"
 
 echo SCALED_FINEWEB_OPD_POST_DONE
