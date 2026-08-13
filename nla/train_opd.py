@@ -162,6 +162,14 @@ def main() -> None:
         ),
     )
     ap.add_argument("--max-new-tokens", type=int, default=16)
+    ap.add_argument(
+        "--fixed-horizon", action=argparse.BooleanOptionalAction, default=False,
+        help=(
+            "OPD only: sample exactly --max-new-tokens even if EOS is sampled. "
+            "This disables EOS as a generation stopping condition without masking "
+            "EOS from the policy, so every example contributes the same token count."
+        ),
+    )
     ap.add_argument("--max-teacher-context", type=int, default=512)
     ap.add_argument("--temperature", type=float, default=1.0)
     ap.add_argument(
@@ -207,6 +215,8 @@ def main() -> None:
             "--kl-threshold belongs to the legacy forward_kl/EOS ablation; "
             "true sampled reverse-KL OPD uses the fixed rollout horizon"
         )
+    if args.fixed_horizon and args.objective != "opd":
+        raise ValueError("--fixed-horizon is only valid with --objective opd")
     if args.objective != "token_kl" and args.teacher_top_k:
         raise ValueError("--teacher-top-k is only valid with --objective token_kl")
 
@@ -296,12 +306,25 @@ def main() -> None:
                         max_new_tokens=args.max_new_tokens, do_sample=True,
                         temperature=args.temperature, top_p=1.0, top_k=0,
                         repetition_penalty=1.0, pad_token_id=tokenizer.eos_token_id,
+                        # Passing None explicitly disables EOS stopping. It does
+                        # not alter the sampled distribution, unlike
+                        # min_new_tokens, which masks EOS logits.
+                        **({"eos_token_id": None} if args.fixed_horizon else {}),
                         return_dict_in_generate=True, output_scores=True,
                     )
             finally:
                 vectors_ref[0] = None
             generated = rollout.sequences
-            responses = _trim_generated(generated, prompt_len, eos_ids)
+            if args.fixed_horizon:
+                responses = generated[
+                    :, prompt_len:prompt_len + args.max_new_tokens
+                ].tolist()
+                if any(len(response) != args.max_new_tokens for response in responses):
+                    raise RuntimeError(
+                        "fixed-horizon generation returned a short response"
+                    )
+            else:
+                responses = _trim_generated(generated, prompt_len, eos_ids)
             if args.objective == "opd":
                 # `scores[j]` is the exact, post-temperature distribution used
                 # by generate for sampled token j (top_p=1/top_k=0 do not

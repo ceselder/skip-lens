@@ -79,6 +79,10 @@ test -s "$WARM/adapter_model.safetensors"
 train_arm() {
   local objective=$1
   local name=$2
+  local objective_args=()
+  if [ "$objective" = opd ]; then
+    objective_args+=(--fixed-horizon)
+  fi
   python -m nla.train_opd --objective "$objective" --base-ckpt "$BASE" \
     --av-ckpt "$WARM" --parquet "$DATA/stage2_train.parquet" \
     --sidecar "$DATA/stage2_train.parquet" --save-dir "$CKPTS/$name" \
@@ -87,6 +91,7 @@ train_arm() {
     --gradient-accumulation-steps "$ACCUMULATION" \
     --max-new-tokens 8 --max-optimized-tokens "$STAGE2_TOKEN_BUDGET" \
     --temperature 1.0 --lr 3e-5 --min-lr 3e-6 --save-every 50 \
+    "${objective_args[@]}" \
     --wandb-project skip-lens-opd --wandb-group fineweb-opd-scaled \
     --wandb-name "fineweb_t1_scaled_${name}"
 }
