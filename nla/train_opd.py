@@ -154,6 +154,13 @@ def main() -> None:
     ap.add_argument("--save-dir", required=True)
     ap.add_argument("--num-steps", type=int, default=1000)
     ap.add_argument("--batch-size", type=int, default=2)
+    ap.add_argument(
+        "--gradient-accumulation-steps", type=int, default=1,
+        help=(
+            "number of independently sampled on-policy microbatches per optimizer "
+            "update; --num-steps and --save-every count optimizer updates"
+        ),
+    )
     ap.add_argument("--max-new-tokens", type=int, default=16)
     ap.add_argument("--max-teacher-context", type=int, default=512)
     ap.add_argument("--temperature", type=float, default=1.0)
@@ -193,6 +200,8 @@ def main() -> None:
     args = ap.parse_args()
     args.sidecar = args.sidecar or args.parquet
     args.lr_decay_steps = args.lr_decay_steps or args.num_steps
+    if args.gradient_accumulation_steps < 1:
+        raise ValueError("--gradient-accumulation-steps must be at least 1")
     if args.objective == "opd" and args.kl_threshold is not None:
         raise ValueError(
             "--kl-threshold belongs to the legacy forward_kl/EOS ablation; "
@@ -256,7 +265,13 @@ def main() -> None:
     wall_start = time.monotonic()
     last_step = 0
     last_meta: dict = {}
-    for step in range(1, args.num_steps + 1):
+    optimizer.zero_grad(set_to_none=True)
+    max_microsteps = args.num_steps * args.gradient_accumulation_steps
+    optimizer_updates = 0
+    for microstep in range(1, max_microsteps + 1):
+        accumulation_index = (
+            (microstep - 1) % args.gradient_accumulation_steps
+        ) + 1
         if cursor + args.batch_size > len(order):
             rng.shuffle(order)
             cursor = 0
@@ -268,7 +283,6 @@ def main() -> None:
             np.stack([r["activation"] for r in batch]), dtype=torch.float32, device=device)
         t0 = time.monotonic()
 
-        optimizer.zero_grad(set_to_none=True)
         behavior_logprobs = None
         if args.objective in {"opd", "forward_kl"}:
             # Roll out the current student. No gradients are retained through sampling.
@@ -436,39 +450,15 @@ def main() -> None:
                 )
                 optimized = int(valid.sum().item())
                 metrics = {"sft_ppl": math.exp(min(20.0, float(loss.detach())))}
-            loss.backward()
+            (loss / args.gradient_accumulation_steps).backward()
         finally:
             vectors_ref[0] = None
 
-        grad_norm = torch.nn.utils.clip_grad_norm_(trainable, args.max_grad_norm)
-        optimizer.step()
-        scheduler.step()
         optimized_total += optimized
         elapsed = time.monotonic() - wall_start
-        last_step = step
-        log = {
-            "step": step, "objective": args.objective, "loss": float(loss.detach()),
-            "optimized_tokens": optimized, "optimized_tokens_total": optimized_total,
-            "sampled_tokens": int(valid.sum().item()),
-            "lr": scheduler.get_last_lr()[0], "grad_norm": float(grad_norm),
-            "step_seconds": time.monotonic() - t0, "wall_seconds": elapsed,
-            **metrics,
-        }
-        with history_path.open("a") as f:
-            f.write(json.dumps(log) + "\n")
-        if wb is not None:
-            wb.log(log, step=step)
-        print(" | ".join(f"{k}={v:.4g}" if isinstance(v, float) else f"{k}={v}"
-                         for k, v in log.items() if k not in {"objective"}), flush=True)
-
-        last_meta = {
-            "objective": args.objective, "steps": step,
-            "optimized_tokens": optimized_total, "wall_seconds": elapsed,
-            "kl_threshold": args.kl_threshold, "eos_weight": args.eos_weight,
-        }
         collapsed = (
             args.objective == "forward_kl"
-            and step >= args.early_stop_min_steps
+            and microstep >= args.early_stop_min_steps
             and len(first_cutoff_window) == args.early_stop_window_examples
             and sum(first_cutoff_window) / len(first_cutoff_window)
             >= args.early_stop_first_cutoff_rate
@@ -478,15 +468,80 @@ def main() -> None:
             or (args.max_wall_seconds > 0 and elapsed >= args.max_wall_seconds)
             or collapsed
         )
+        accumulation_boundary = (
+            accumulation_index == args.gradient_accumulation_steps
+        )
+        final_microstep = microstep == max_microsteps
+        perform_update = accumulation_boundary or should_stop or final_microstep
+        grad_norm = None
+        if perform_update:
+            # If a token/wall budget ends partway through an accumulated update,
+            # undo the nominal 1/accumulation_steps scaling so the available
+            # microbatches still form an ordinary average.
+            if accumulation_index < args.gradient_accumulation_steps:
+                rescale = args.gradient_accumulation_steps / accumulation_index
+                for param in trainable:
+                    if param.grad is not None:
+                        param.grad.mul_(rescale)
+            grad_norm = torch.nn.utils.clip_grad_norm_(trainable, args.max_grad_norm)
+            optimizer.step()
+            scheduler.step()
+            optimizer.zero_grad(set_to_none=True)
+            optimizer_updates += 1
+            last_step = optimizer_updates
+
+        log = {
+            "step": microstep, "optimizer_update": optimizer_updates,
+            "accumulation_index": accumulation_index,
+            "objective": args.objective, "loss": float(loss.detach()),
+            "optimized_tokens": optimized, "optimized_tokens_total": optimized_total,
+            "sampled_tokens": int(valid.sum().item()),
+            "lr": scheduler.get_last_lr()[0],
+            "grad_norm": float(grad_norm) if grad_norm is not None else None,
+            "step_seconds": time.monotonic() - t0, "wall_seconds": elapsed,
+            **metrics,
+        }
+        with history_path.open("a") as f:
+            f.write(json.dumps(log) + "\n")
+        if wb is not None:
+            wb.log(log, step=microstep)
+        print(" | ".join(f"{k}={v:.4g}" if isinstance(v, float) else f"{k}={v}"
+                         for k, v in log.items() if k not in {"objective"}), flush=True)
+
+        last_meta = {
+            "objective": args.objective, "steps": optimizer_updates,
+            "microsteps": microstep,
+            "batch_size": args.batch_size,
+            "gradient_accumulation_steps": args.gradient_accumulation_steps,
+            "effective_batch_size": (
+                args.batch_size * args.gradient_accumulation_steps
+            ),
+            "optimized_tokens": optimized_total, "wall_seconds": elapsed,
+            "kl_threshold": args.kl_threshold, "eos_weight": args.eos_weight,
+        }
         last_meta["stop_reason"] = (
             "first_token_kl_collapse" if collapsed else
             "token_or_wall_budget" if should_stop else None
         )
-        if step % args.save_every == 0 or should_stop or step == args.num_steps:
-            out = _save(model, tokenizer, args.sidecar, save_dir, step, last_meta)
+        save_boundary = (
+            perform_update
+            and (
+                optimizer_updates % args.save_every == 0
+                or should_stop
+                or final_microstep
+            )
+        )
+        if save_boundary:
+            out = _save(
+                model, tokenizer, args.sidecar, save_dir,
+                optimizer_updates, last_meta,
+            )
             print(f"[save] {out}", flush=True)
         if should_stop:
-            print(f"[stop] {last_meta['stop_reason']} at step {step}", flush=True)
+            print(
+                f"[stop] {last_meta['stop_reason']} at optimizer update "
+                f"{optimizer_updates} / microstep {microstep}", flush=True,
+            )
             break
 
     (save_dir / "run_summary.json").write_text(json.dumps(last_meta, indent=2))
