@@ -16,7 +16,7 @@ import os
 import numpy as np
 import torch
 
-SRC = int(os.environ.get("SRC", "42"))
+SRC = [int(x) for x in os.environ.get("SRC", "42").split(",")]
 TGT = int(os.environ.get("TGT", "62"))
 OUT_DIR = os.environ.get("OUT_DIR", "/workspace/results/offset_jlens")
 
@@ -33,11 +33,11 @@ def load_shards() -> list[dict]:
     return shards
 
 
-def mean_of(shards: list[dict]) -> torch.Tensor:
+def mean_of(shards: list[dict], src: int) -> torch.Tensor:
     total = sum(s["n_done"] for s in shards)
     acc = None
     for s in shards:
-        j = s["jacobian_sum"][SRC]
+        j = s["jacobian_sum"][src]
         acc = j.clone() if acc is None else acc + j
     return acc / total
 
@@ -58,35 +58,35 @@ def effective_rank(J: torch.Tensor, var_frac: float = 0.99) -> int:
 def main() -> None:
     shards = load_shards()
     n_offsets = shards[0]["n_offsets"]
-    J = mean_of(shards)  # [n_offsets, d, d]
-
     half = max(1, len(shards) // 2)
-    J_a, J_b = mean_of(shards[:half]), mean_of(shards[half:])
+    diag = {"n_offsets": n_offsets,
+            "total_prompts": sum(s["n_done"] for s in shards),
+            "comb_spacing": shards[0]["comb_spacing"], "sources": {}}
 
-    diag = {"n_offsets": n_offsets, "total_prompts": sum(s["n_done"] for s in shards),
-            "comb_spacing": shards[0]["comb_spacing"], "per_offset": []}
-    for d in range(n_offsets):
-        Jd = J[d]
-        cos = torch.nn.functional.cosine_similarity(
-            _f64(J_a[d]).flatten(), _f64(J_b[d]).flatten(), dim=0
-        ).item() if len(shards) > 1 else float("nan")
-        entry = {
-            "delta": d,
-            "fro_norm": _f64(Jd).norm().item(),
-            "effective_rank_99": effective_rank(Jd),
-            "half_split_cosine": cos,
-        }
-        diag["per_offset"].append(entry)
-        np.save(f"{OUT_DIR}/Jbar_L{SRC}_to_L{TGT}_off{d}.npy",
-                Jd.numpy().astype("float32"))
-        print(f"  off{d}: |J|={entry['fro_norm']:.2f} "
-              f"rank99={entry['effective_rank_99']} split-cos={cos:.3f}")
+    for src in SRC:
+        J = mean_of(shards, src)                       # [n_offsets, d, d]
+        J_a, J_b = mean_of(shards[:half], src), mean_of(shards[half:], src)
+        rows = []
+        print(f"\n=== source L{src} -> L{TGT}")
+        for d in range(n_offsets):
+            Jd = J[d]
+            cos = torch.nn.functional.cosine_similarity(
+                _f64(J_a[d]).flatten(), _f64(J_b[d]).flatten(), dim=0
+            ).item() if len(shards) > 1 else float("nan")
+            entry = {"delta": d, "fro_norm": _f64(Jd).norm().item(),
+                     "effective_rank_99": effective_rank(Jd),
+                     "half_split_cosine": cos}
+            rows.append(entry)
+            np.save(f"{OUT_DIR}/Jbar_L{src}_to_L{TGT}_off{d}.npy",
+                    Jd.numpy().astype("float32"))
+            print(f"  off{d}: |J|={entry['fro_norm']:.3f} "
+                  f"rank99={entry['effective_rank_99']} split-cos={cos:.3f}")
+        np.save(f"{OUT_DIR}/Jbar_L{src}_to_L{TGT}_offpooled.npy",
+                J.mean(dim=0).numpy().astype("float32"))
+        diag["sources"][str(src)] = rows
 
-    pooled = J.mean(dim=0)
-    np.save(f"{OUT_DIR}/Jbar_L{SRC}_to_L{TGT}_offpooled.npy",
-            pooled.numpy().astype("float32"))
     json.dump(diag, open(f"{OUT_DIR}/offset_fit_diagnostics.json", "w"), indent=2)
-    print(f"=== MERGE DONE: {OUT_DIR} ===")
+    print(f"\n=== MERGE DONE: {OUT_DIR} ===")
 
 
 if __name__ == "__main__":

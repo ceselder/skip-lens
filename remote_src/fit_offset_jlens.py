@@ -32,7 +32,7 @@ from jlens.hf import from_hf
 from jlens.offset_fitting import fit_offsets
 
 BASE = "Qwen/Qwen3.6-27B"
-SRC = int(os.environ.get("SRC", "42"))
+SRC = [int(x) for x in os.environ.get("SRC", "42").split(",")]
 TGT = int(os.environ.get("TGT", "62"))
 N_PROMPTS = int(os.environ.get("N_PROMPTS", "512"))
 N_OFFSETS = int(os.environ.get("N_OFFSETS", "16"))
@@ -99,6 +99,9 @@ def main() -> None:
         f"dim_batch={DIM_BATCH} ckpt={ckpt}",
         flush=True,
     )
+    # Multiple source layers share the SAME backward passes (the estimator takes
+    # grads w.r.t. every source at once), so fitting L62->L63 and L42->L63
+    # together costs no more than fitting one of them.
 
     tok = AutoTokenizer.from_pretrained(BASE)
     hf = (
@@ -117,7 +120,7 @@ def main() -> None:
     fit_offsets(
         model,
         shard_prompts,
-        source_layers=[SRC],
+        source_layers=SRC,
         target_layer=TGT,
         n_offsets=N_OFFSETS,
         comb_spacing=COMB,
