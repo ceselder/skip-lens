@@ -81,6 +81,47 @@ def compact_eval(data: dict) -> dict:
     }
 
 
+def paired_quality(
+    rows: list[dict],
+    feed: str,
+    samples: int,
+    rng: np.random.Generator,
+) -> dict:
+    def arm(name: str) -> dict[int, dict]:
+        return {
+            int(row["index"]): row["quality"]
+            for row in rows
+            if row.get("arm") == name and row.get("feed") == feed
+            and "quality" in row
+        }
+
+    opd, sft = arm("opd"), arm("sft_matched")
+    if opd.keys() != sft.keys():
+        raise ValueError(f"quality judge rows differ for {feed}")
+    indices = sorted(opd)
+    output = {}
+    for metric, higher_is_better in (
+        ("coherence", True), ("support", True),
+        ("hallucination", False), ("premature_eos", False),
+    ):
+        delta = np.asarray([
+            float(opd[index][metric]) - float(sft[index][metric])
+            for index in indices
+        ])
+        draws = delta[
+            rng.integers(0, len(delta), size=(samples, len(delta)))
+        ].mean(axis=1)
+        output[metric] = {
+            "n": len(delta),
+            "opd_minus_sft": float(delta.mean()),
+            "ci95": [float(x) for x in np.quantile(draws, (0.025, 0.975))],
+            "opd_better_probability": float(
+                np.mean(draws > 0) if higher_is_better else np.mean(draws < 0)
+            ),
+        }
+    return output
+
+
 def load_training(checkpoints: Path) -> dict:
     output = {}
     for arm in ("opd", "sft_matched"):
@@ -103,6 +144,7 @@ def main() -> None:
     parser.add_argument("--results", required=True)
     parser.add_argument("--checkpoints", required=True)
     parser.add_argument("--out", required=True)
+    parser.add_argument("--quality", default=None)
     parser.add_argument("--bootstrap-samples", type=int, default=10_000)
     parser.add_argument("--seed", type=int, default=20260813)
     args = parser.parse_args()
@@ -191,6 +233,19 @@ def main() -> None:
         "training": load_training(checkpoints),
         "bootstrap_samples": args.bootstrap_samples,
     }
+    if args.quality:
+        quality = json.loads(Path(args.quality).read_text())
+        output["quality"] = {
+            "model": quality.get("model"),
+            "summary": quality["summary"],
+            "by_condition": quality["by_condition"],
+            "paired_comparisons": {
+                feed: paired_quality(
+                    quality["detail"], feed, args.bootstrap_samples, rng,
+                )
+                for feed in ("L62", "L42")
+            },
+        }
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(output, indent=2))
@@ -199,6 +254,7 @@ def main() -> None:
         "L62": selected["L62"],
         "L62_paired": paired["L62"],
         "training": output["training"],
+        "quality": output.get("quality"),
     }, indent=2))
 
 

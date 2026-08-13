@@ -1,6 +1,7 @@
 import json
 import sys
 
+import numpy as np
 import pytest
 
 from evals import analyze_scaled_opd
@@ -76,3 +77,22 @@ def test_selects_best_opd_and_compares_same_step(tmp_path, monkeypatch):
         ["opd_minus_sft"]
         == pytest.approx(0.3)
     )
+
+
+def test_paired_quality_uses_matching_rows():
+    rows = []
+    for arm, coherence in (("opd", 4), ("sft_matched", 3)):
+        for index in range(3):
+            rows.append({
+                "arm": arm, "feed": "L62", "index": index,
+                "quality": {
+                    "coherence": coherence, "support": coherence,
+                    "hallucination": arm == "sft_matched",
+                    "premature_eos": False,
+                },
+            })
+    result = analyze_scaled_opd.paired_quality(
+        rows, "L62", 100, np.random.default_rng(0),
+    )
+    assert result["coherence"]["opd_minus_sft"] == 1
+    assert result["hallucination"]["opd_minus_sft"] == -1
