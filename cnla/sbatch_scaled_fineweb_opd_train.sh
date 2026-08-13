@@ -10,7 +10,7 @@
 set -euo pipefail
 
 # Large-batch T=1 FineWeb experiment. Each optimizer update averages 256
-# independently sampled activation/trajectory pairs (physical 32 × accumulate 8).
+# independently sampled activation/trajectory pairs (physical 8 × accumulate 32).
 
 ROOT=${ROOT:-/workspace-vast/celeste/skip-lens-opd}
 SRC=$ROOT/src
@@ -19,8 +19,8 @@ BASE=${BASE:-Qwen/Qwen3.6-27B}
 DATA=$ROOT/data/fineweb_t1_scaled_100k
 CKPTS=$ROOT/checkpoints/fineweb_t1_scaled_100k
 RESULTS=$ROOT/results/fineweb_t1_scaled_100k
-PHYSICAL_BATCH=${PHYSICAL_BATCH:-32}
-ACCUMULATION=${ACCUMULATION:-8}
+PHYSICAL_BATCH=${PHYSICAL_BATCH:-8}
+ACCUMULATION=${ACCUMULATION:-32}
 WARM_UPDATES=175
 STAGE2_UPDATES=500
 WARM_TOKEN_BUDGET=358400
