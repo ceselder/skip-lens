@@ -212,8 +212,8 @@ masking EOS from the sampled distribution. Thus each arm receives exactly 500 ×
 Automatic uncertainty uses 10,000 paired bootstrap resamples over validation rows. Sonnet 5
 quality judgment is model-based and is reported separately from token-level metrics.</p>
 <details><summary>Reproducibility</summary><ul>
-<li>Collection Slurm array: <code>90805</code>; training/evaluation: <code>90806</code>;
-postprocessing/judging: <code>91155</code>.</li>
+<li>Collection Slurm array: <code>90805</code>; corrected fixed-horizon training/evaluation:
+<code>91188</code>; postprocessing/judging/upload: <code>91189</code>.</li>
 <li>Selected OPD checkpoint: <code>{escape(selection['selected_opd_checkpoint'])}</code>.</li>
 <li>Matched SFT checkpoint: <code>{escape(selection['matched_sft_checkpoint'])}</code>.</li>
 <li>Raw analysis: <code>data/scaled_opd_analysis.json</code>; judge output:
