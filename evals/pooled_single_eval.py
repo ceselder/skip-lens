@@ -42,6 +42,14 @@ ap.add_argument("--deep-from", type=int, default=0,
                      "MUST match the value used to build the training data, since "
                      "the weights are part of the arm's design, not a mismatch.")
 ap.add_argument("--weight-mode", choices=["uniform", "norm_eq"], default="uniform")
+ap.add_argument("--reg-dir", default="/workspace/results/regression_lens",
+                help="per-offset ridge maps W*_d from fit_regression_lens.py. Enables "
+                     "the regression_avg condition: the SAME pooling weights applied "
+                     "to W*_d instead of Jbar^(d). W* predicts the local transport the "
+                     "decoder trained on about twice as well (centered cos 0.336 vs "
+                     "0.165), so for a TRAINED-decoder readout it should be the better "
+                     "test-time vector even though it is worse under a logit-lens "
+                     "readout, where E[J] wins (+0.056 vs +0.038 span recall).")
 ap.add_argument("--evals-dir", required=True)
 ap.add_argument("--conditions", default="pooled_avg,raw_h42,mean_only")
 ap.add_argument("--n-ao", type=int, default=4)
@@ -94,6 +102,23 @@ print(f"[ps] pooling offsets {args.deep_from}..{args.n_offsets - 1} "
 HBAR = torch.from_numpy(np.load(
     os.path.join(args.jbar_dir, f"hbar_L{args.src_layer}.npy"))).float().to(dev)
 MEANVEC = JP @ HBAR
+
+# regression_avg: same weights, same pooling, but the ridge-fit maps. Built by
+# weighted summation of the per-offset W*_d, which is exact rather than an
+# approximation: sum_d w_d W*_d = (sum_d w_d B_d) A^-1 = the directly-fit pooled
+# map (verified to every printed digit in eval_regression_lens.py).
+JR = None
+if "regression_avg" in CONDS:
+    for i, d in enumerate(range(args.deep_from, args.n_offsets)):
+        rp = os.path.join(args.reg_dir,
+                          f"Wreg_L{args.src_layer}_to_L{args.tgt_layer}_off{d}.npy")
+        if not os.path.exists(rp):
+            break
+        M = torch.from_numpy(np.load(rp)).float().to(dev)
+        JR = WLOG[i] * M if JR is None else JR + WLOG[i] * M
+    assert JR is not None, f"no Wreg matrices in {args.reg_dir}"
+    print(f"[ps] regression maps pooled with the identical weights "
+          f"(|JR|={float(JR.norm()):.1f} vs |JP|={float(JP.norm()):.1f})", flush=True)
 print(f"[ps] pooled averaged gradient loaded (|JP|={float(JP.norm()):.1f}, "
       f"|JP.hbar|={float(MEANVEC.norm()):.1f})", flush=True)
 
@@ -137,6 +162,8 @@ def vec_for(cond, h42):
         return h42
     if cond == "mean_only":
         return MEANVEC
+    if cond == "regression_avg":
+        return JR @ h42
     raise ValueError(cond)
 
 
