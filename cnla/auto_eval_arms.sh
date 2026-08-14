@@ -25,10 +25,10 @@ run_arm () {           # $1=arm  $2=ckpt-dir  $3=jbar-dir  $4=conditions
   local arm=$1 ckroot=$2 jd=$3 conds=$4
   local out="$R/${arm}.json"
   [ -f "$R/${arm}_breakdown.json" ] && { log "$arm already evaluated"; return; }
-  log "$arm: waiting for training to finish"
-  until grep -q "^done\.$" "/workspace/skip-lens/logs/train_${arm}.log" 2>/dev/null; do
-    sleep 180
-  done
+  # NON-BLOCKING: skip arms that are not finished yet; the outer loop revisits
+  # them. Blocking here made a finished arm wait behind an unfinished one.
+  grep -q "^done\.$" "/workspace/skip-lens/logs/train_${arm}.log" 2>/dev/null || {
+    return 1; }
   local ck
   ck=$(ls -d ${ckroot}/iter_* 2>/dev/null | sort | tail -1)
   [ -z "$ck" ] && { log "$arm: NO CHECKPOINT under $ckroot"; return; }
@@ -52,8 +52,17 @@ CK=/workspace/skip-lens/ckpts
 JD_PEN=/workspace/results/offset_jlens          # 42->62 family
 JD_LAST=/workspace/results/offset_jlens_last    # 42->63 and 62->63 families
 
-run_arm armD "$CK/multislot_armD_pen8"      "$JD_PEN"  "per_offset,diff"
-run_arm armF "$CK/multislot_armF_matched"  "$JD_PEN"  "per_offset,diff"
-run_arm armG "$CK/multislot_armG_centered" "$JD_LAST" "centered,per_offset,diff"
-run_arm armE "$CK/multislot_armE_twoJ"     "$JD_LAST" "per_offset,diff"
+while true; do
+  run_arm armE "$CK/multislot_armE_twoJ"     "$JD_LAST" "per_offset,diff"    || true
+  run_arm armD "$CK/multislot_armD_pen8"     "$JD_PEN"  "per_offset,diff"    || true
+  run_arm armG "$CK/multislot_armG_centered" "$JD_LAST" "centered,per_offset,diff" || true
+  run_arm armF "$CK/multislot_armF_matched"  "$JD_PEN"  "per_offset,diff"    || true
+  run_arm armH "$CK/multislot_armH_pen3"     "$JD_PEN"  "per_offset"         || true
+  n=0
+  for a in armE armD armG armF armH; do
+    [ -f "$R/${a}_breakdown.json" ] && n=$((n+1))
+  done
+  [ "$n" -ge 5 ] && break
+  sleep 300
+done
 log "all arms evaluated"
