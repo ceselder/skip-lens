@@ -140,7 +140,13 @@ print("[ms] pooled operators: " + ", ".join(
 VECSRC = {
     "regr_uniform": ("regression W*, pooled d<16  [armI 0.539]",
                      lambda h: OPS["regr_uniform"] @ h),
-    "jlens_pooled": ("the paper's pooled J-lens vector  [armC 0.561]",
+    # NOTE: Jbar_..._offpooled.npy is exactly (1/16) * sum_d Jbar_d — cosine
+    # 1.0000, norm ratio 16.0 — and the injection hook norm-matches to ||h_p||,
+    # so this is the SAME INPUT as jbar_uniform. Kept as a separate entry only
+    # because armC's measured score was obtained under this name. Validated
+    # against an independently-fit external J-lens at 0.905 matrix cosine.
+    "jlens_pooled": ("the paper's pooled J-lens vector (identical input to "
+                     "jbar_uniform after norm-matching)  [armC 0.561]",
                      lambda h: JPOOL @ h),
     "raw_h42": ("raw h42, no operator  [armI 0.453 / armK 0.517]",
                 lambda h: h),
@@ -163,6 +169,24 @@ VEC_ORDER = [k for k in ("regr_uniform", "jlens_pooled", "raw_h42", "regr_deep",
                          "jbar_deep", "jbar_uniform", "regrU_uniform", "mean_only")
              if k in VECSRC]
 JLAYERS, CAP_LAYERS = [SRC_L], [SRC_L, TARGET_L]
+
+# Per-offset REGRESSION families, so the K=8 arms can be fed W* slots and not
+# only plain-E[J] ones. Without these the multi-slot arms could never be tested
+# with the operator that gave the single-slot arms their +0.197.
+def _load_family(directory, prefix, k):
+    out = []
+    for d in range(k):
+        p = os.path.join(directory, f"{prefix}_L{SRC_L}_to_L{TARGET_L}_off{d}.npy")
+        if not os.path.exists(p):
+            return None
+        out.append(torch.from_numpy(np.load(p)).float().to(dev))
+    return out
+
+
+WREG = _load_family(REG_DIR, "Wreg", K)
+WREGU = _load_family(REG_DIR, "WregU", K)
+print(f"[ms] per-offset regression families: Wreg={'yes' if WREG else 'NO'} "
+      f"WregU={'yes' if WREGU else 'NO'}", flush=True)
 
 SUFFIX_DIR = os.path.join(JBAR_DIR, "suffix")
 JSUF = None
@@ -249,12 +273,20 @@ _vref = [None]
 _sref = [None, 1]        # [slot_scale, n_slots] — see nla/utils/hooks.py
 register_karvonen_hook(PEFT, _vref, inj_id, _left, _right, scale_ref=_sref)
 
-COND_ORDER = ["per_offset", "centered", "diff", "keep0_deflate_rest",
-              "keep0_gs_rest", "slot0_only", "shuffled_slots", "no_slot0", "gs",
-              "pooled_identical", "deflated"]
-COND_ORDER = [c for c in COND_ORDER if c in CONDITIONS]
+_BASE_CONDS = ["per_offset", "centered", "diff", "keep0_deflate_rest",
+               "keep0_gs_rest", "slot0_only", "shuffled_slots", "no_slot0", "gs",
+               "pooled_identical", "deflated"]
+_BASE_CONDS = [c for c in _BASE_CONDS if c in CONDITIONS]
+# regression variants first for the two constructions worth comparing head to
+# head; the rest of the E[J] constructions follow
+COND_ORDER = []
+if WREG is not None:
+    COND_ORDER += ["regr_per_offset", "regr_centered", "regr_diff"]
+if WREGU is not None:
+    COND_ORDER += ["regrU_per_offset"]
+COND_ORDER += _BASE_CONDS
 if JSUF is not None:
-    COND_ORDER = ["suffix_shared", "suffix_perslot"] + COND_ORDER
+    COND_ORDER += ["suffix_shared", "suffix_perslot"]
 # single-slot arms expose every vector source, so any vector can be fed to any
 # decoder — including ones that never trained on it
 REGISTRY = {cat: (COND_ORDER if kind == "multi" else VEC_ORDER)
@@ -266,13 +298,27 @@ RUNS, LOCK = {}, threading.Lock()
 
 def slots_for(cond, h42):
     """Delegates to evals/slot_builders.py — the same code path the judged evals
-    use, so the playground can never drift from the measured numbers."""
+    use, so the playground can never drift from the measured numbers.
+
+    A `regr_`/`regrU_` prefix swaps the per-offset FAMILY the slots are built
+    from (ridge-fit W*_d instead of E[J]_d) while leaving the construction
+    identical, so e.g. regr_centered is the centered construction on the
+    regression family."""
     if cond in ("suffix_shared", "suffix_perslot"):
         if JSUF is None:
             raise HTTPException(404, "suffix-pooled family not built")
         slots = build_slots("per_offset", h42, JSUF, JPOOL, k=K)
         return slots, ("shared" if cond == "suffix_shared" else "per_slot")
-    return build_slots(cond, h42, JBAR[:K], JPOOL, k=K, hbar=HBAR42,
+    fam, base = JBAR[:K], cond
+    for pfx, f in (("regrU_", WREGU), ("regr_", WREG)):
+        if cond.startswith(pfx):
+            if f is None:
+                raise HTTPException(404, f"{pfx}* family not fitted")
+            fam, base = f, cond[len(pfx):]
+            break
+    # jpool stays the plain pooled J-lens: the constructions that use it
+    # (pooled_identical) are defined against the paper's vector by design
+    return build_slots(base, h42, fam, JPOOL, k=K, hbar=HBAR42,
                        meandirs=MEANDIR), "per_slot"
 
 
