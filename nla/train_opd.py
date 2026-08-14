@@ -1,0 +1,577 @@
+"""Train an activation-only lens with on-policy distillation.
+
+The frozen teacher and trainable student share one base-model allocation:
+
+* teacher forward: adapter disabled, real source text prefilled;
+* student rollout/forward: adapter enabled, only the activation is injected;
+* both predict along the student's sampled prefix;
+* OPD loss: sampled per-token KL(student || teacher), optimized through a
+  policy-gradient/importance-ratio loss;
+* ``forward_kl`` preserves the earlier KL(teacher || student) + EOS-cutoff
+  experiment as an explicitly labelled ablation.
+* ``token_kl`` distills the teacher distribution on the dataset continuation's
+  teacher-forced prefixes.  It supports either exact vocabulary KL or a
+  teacher-top-k-plus-tail coarse graining.
+
+``--objective sft`` provides the matched continuation-SFT control using the
+same loader, actor, optimizer, token counter and wall-clock stopping machinery.
+"""
+
+from __future__ import annotations
+
+import argparse
+import collections
+import json
+import math
+import shutil
+import time
+from pathlib import Path
+
+import numpy as np
+import pyarrow.parquet as pq
+import torch
+import torch.nn.functional as F
+from peft import PeftModel
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+from nla.config import load_nla_config
+from nla.opd import (
+    forward_kl_cutoff_loss,
+    reverse_kl_policy_loss,
+    teacher_student_kl,
+    teacher_student_topk_tail_kl,
+)
+from nla.train_sft import build_lr_lambda
+from nla.utils import build_prompt_text, register_karvonen_hook
+
+
+def load_dataset(path: str, max_rows: int | None = None) -> list[dict]:
+    pf = pq.ParquetFile(path)
+    needed = ["prompt", "activation_vector", "teacher_input_ids", "target_ids"]
+    missing = set(needed) - set(pf.schema_arrow.names)
+    if missing:
+        raise ValueError(f"{path} missing OPD columns: {sorted(missing)}")
+    rows: list[dict] = []
+    for rg_idx in range(pf.num_row_groups):
+        if max_rows is not None and len(rows) >= max_rows:
+            break
+        rg = pf.read_row_group(rg_idx, columns=needed)
+        acts_col = rg.column("activation_vector").combine_chunks()
+        acts = np.asarray(acts_col.flatten(), dtype=np.float32).reshape(len(acts_col), -1)
+        prompts = rg.column("prompt").to_pylist()
+        contexts = rg.column("teacher_input_ids").to_pylist()
+        targets = rg.column("target_ids").to_pylist()
+        take = len(prompts) if max_rows is None else min(len(prompts), max_rows - len(rows))
+        for i in range(take):
+            if contexts[i] and targets[i]:
+                rows.append({
+                    "prompt": prompts[i],
+                    "activation": acts[i],
+                    "teacher_input_ids": contexts[i],
+                    "target_ids": targets[i],
+                })
+    if not rows:
+        raise ValueError(f"no usable rows in {path}")
+    return rows
+
+
+def _right_pad(seqs: list[list[int]], pad_id: int, device: str):
+    lengths = torch.tensor([len(x) for x in seqs], dtype=torch.long, device=device)
+    width = int(lengths.max().item())
+    ids = torch.full((len(seqs), width), pad_id, dtype=torch.long, device=device)
+    mask = torch.zeros_like(ids)
+    for i, seq in enumerate(seqs):
+        ids[i, : len(seq)] = torch.tensor(seq, dtype=torch.long, device=device)
+        mask[i, : len(seq)] = 1
+    return ids, mask, lengths
+
+
+def _trim_generated(sequences: torch.Tensor, prompt_len: int, eos_ids: set[int]):
+    out: list[list[int]] = []
+    for row in sequences[:, prompt_len:].tolist():
+        end = next((i + 1 for i, tok in enumerate(row) if tok in eos_ids), len(row))
+        out.append(row[:end])
+    return out
+
+
+def _predictive_logits(logits: torch.Tensor, prefix_lens: torch.Tensor, width: int):
+    """Gather distributions predicting response tokens 0..width-1."""
+    offsets = torch.arange(width, device=logits.device).view(1, -1)
+    positions = prefix_lens.to(logits.device).view(-1, 1) - 1 + offsets
+    # Some rows have shorter responses than ``width``. Their extra positions
+    # are masked later, but gathering must still stay in bounds.
+    positions = positions.clamp(max=logits.shape[1] - 1)
+    rows = torch.arange(logits.shape[0], device=logits.device).view(-1, 1)
+    return logits[rows, positions]
+
+
+def _clip_valid_to_budget(valid: torch.Tensor, remaining: int) -> torch.Tensor:
+    """Mask loss positions after an exact remaining-token budget is exhausted."""
+    if remaining < 0:
+        raise ValueError("remaining token budget must be non-negative")
+    if int(valid.sum()) <= remaining:
+        return valid
+    clipped = valid.clone()
+    flat = clipped.view(-1)
+    indices = flat.nonzero(as_tuple=False).squeeze(-1)
+    flat[indices[remaining:]] = False
+    return clipped
+
+
+def _student_prompt_ids(rows, tokenizer, injection_char):
+    texts = [build_prompt_text(r["prompt"], injection_char, tokenizer) for r in rows]
+    ids = [tokenizer.encode(x, add_special_tokens=False) for x in texts]
+    if len({tuple(x) for x in ids}) != 1:
+        raise ValueError("OPD currently requires one canonical actor prompt per batch")
+    return ids[0]
+
+
+def _save(model, tokenizer, sidecar: str, save_dir: Path, step: int, meta: dict):
+    out = save_dir / f"iter_{step:07d}"
+    out.mkdir(parents=True, exist_ok=True)
+    model.save_pretrained(str(out))
+    tokenizer.save_pretrained(str(out))
+    src = Path(sidecar)
+    if src.suffix == ".parquet":
+        src = Path(str(src) + ".nla_meta.yaml")
+    if src.exists():
+        shutil.copy2(src, out / "nla_meta.yaml")
+    (out / "opd_meta.json").write_text(json.dumps(meta, indent=2))
+    return out
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument(
+        "--objective",
+        choices=["opd", "forward_kl", "token_kl", "sft"],
+        required=True,
+    )
+    ap.add_argument("--base-ckpt", default="Qwen/Qwen3.6-27B")
+    ap.add_argument("--av-ckpt", required=True, help="short future-lens SFT LoRA")
+    ap.add_argument("--parquet", required=True)
+    ap.add_argument("--sidecar", default=None)
+    ap.add_argument("--save-dir", required=True)
+    ap.add_argument("--num-steps", type=int, default=1000)
+    ap.add_argument("--batch-size", type=int, default=2)
+    ap.add_argument(
+        "--gradient-accumulation-steps", type=int, default=1,
+        help=(
+            "number of independently sampled on-policy microbatches per optimizer "
+            "update; --num-steps and --save-every count optimizer updates"
+        ),
+    )
+    ap.add_argument("--max-new-tokens", type=int, default=16)
+    ap.add_argument(
+        "--fixed-horizon", action=argparse.BooleanOptionalAction, default=False,
+        help=(
+            "OPD only: sample exactly --max-new-tokens even if EOS is sampled. "
+            "This disables EOS as a generation stopping condition without masking "
+            "EOS from the policy, so every example contributes the same token count."
+        ),
+    )
+    ap.add_argument("--max-teacher-context", type=int, default=512)
+    ap.add_argument("--temperature", type=float, default=1.0)
+    ap.add_argument(
+        "--teacher-top-k",
+        type=int,
+        default=0,
+        help=(
+            "token_kl only: 0 uses exact vocabulary KL; positive K uses "
+            "teacher top-K categories plus one tail-mass bin"
+        ),
+    )
+    ap.add_argument("--kl-threshold", type=float, default=None)
+    ap.add_argument("--eos-weight", type=float, default=1.0)
+    ap.add_argument("--lr", type=float, default=3e-5)
+    ap.add_argument("--min-lr", type=float, default=3e-6)
+    ap.add_argument("--warmup-steps", type=int, default=20)
+    ap.add_argument("--lr-decay-steps", type=int, default=None,
+                    help="cosine schedule horizon; defaults to --num-steps")
+    ap.add_argument("--max-grad-norm", type=float, default=1.0)
+    ap.add_argument("--max-optimized-tokens", type=int, default=0,
+                    help="0 disables; otherwise stop after this many loss-bearing tokens")
+    ap.add_argument("--max-wall-seconds", type=float, default=0.0,
+                    help="0 disables; used for the GPU-hour-matched SFT arm")
+    ap.add_argument("--early-stop-first-cutoff-rate", type=float, default=0.9,
+                    help="stop OPD when this fraction of the rolling window fails at token 1")
+    ap.add_argument("--early-stop-window-examples", type=int, default=100)
+    ap.add_argument("--early-stop-min-steps", type=int, default=50)
+    ap.add_argument("--max-rows", type=int, default=None)
+    ap.add_argument("--save-every", type=int, default=50)
+    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--attn-implementation", default="sdpa")
+    ap.add_argument("--wandb-project", default="skip-lens-opd")
+    ap.add_argument("--wandb-name", default=None)
+    ap.add_argument("--wandb-group", default="opd-vs-sft")
+    ap.add_argument("--no-wandb", action="store_true")
+    args = ap.parse_args()
+    args.sidecar = args.sidecar or args.parquet
+    args.lr_decay_steps = args.lr_decay_steps or args.num_steps
+    if args.gradient_accumulation_steps < 1:
+        raise ValueError("--gradient-accumulation-steps must be at least 1")
+    if args.objective == "opd" and args.kl_threshold is not None:
+        raise ValueError(
+            "--kl-threshold belongs to the legacy forward_kl/EOS ablation; "
+            "true sampled reverse-KL OPD uses the fixed rollout horizon"
+        )
+    if args.fixed_horizon and args.objective != "opd":
+        raise ValueError("--fixed-horizon is only valid with --objective opd")
+    if args.objective != "token_kl" and args.teacher_top_k:
+        raise ValueError("--teacher-top-k is only valid with --objective token_kl")
+
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    device = "cuda"
+    tokenizer = AutoTokenizer.from_pretrained(args.base_ckpt)
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    cfg = load_nla_config(args.sidecar, tokenizer)
+
+    base = AutoModelForCausalLM.from_pretrained(
+        args.base_ckpt, torch_dtype=torch.bfloat16,
+        attn_implementation=args.attn_implementation,
+    ).to(device)
+    model = PeftModel.from_pretrained(base, args.av_ckpt, is_trainable=True)
+    vectors_ref = [None]
+    register_karvonen_hook(
+        model, vectors_ref, cfg.injection_token_id,
+        cfg.injection_left_neighbor_id, cfg.injection_right_neighbor_id,
+    )
+    model.train()
+    trainable = [p for p in model.parameters() if p.requires_grad]
+    if not trainable:
+        raise RuntimeError("AV checkpoint loaded with no trainable adapter parameters")
+    optimizer = torch.optim.AdamW(trainable, lr=args.lr, betas=(0.9, 0.95), weight_decay=0.0)
+    scheduler = torch.optim.lr_scheduler.LambdaLR(
+        optimizer,
+        build_lr_lambda(args.warmup_steps, args.lr_decay_steps, args.min_lr / args.lr),
+    )
+
+    rows = load_dataset(args.parquet, args.max_rows)
+    rng = np.random.default_rng(args.seed)
+    order = np.arange(len(rows))
+    rng.shuffle(order)
+    cursor = 0
+    eos_ids = {tokenizer.eos_token_id}
+    generation_eos = getattr(model.generation_config, "eos_token_id", None)
+    if isinstance(generation_eos, int):
+        eos_ids.add(generation_eos)
+    elif generation_eos:
+        eos_ids.update(generation_eos)
+
+    save_dir = Path(args.save_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)
+    (save_dir / "resolved_config.json").write_text(json.dumps(vars(args), indent=2))
+    history_path = save_dir / "metrics.jsonl"
+    wb = None
+    if not args.no_wandb:
+        import wandb
+        wb = wandb.init(project=args.wandb_project, name=args.wandb_name,
+                        group=args.wandb_group, config=vars(args))
+
+    optimized_total = 0
+    first_cutoff_window = collections.deque(maxlen=args.early_stop_window_examples)
+    wall_start = time.monotonic()
+    last_step = 0
+    last_meta: dict = {}
+    optimizer.zero_grad(set_to_none=True)
+    max_microsteps = args.num_steps * args.gradient_accumulation_steps
+    optimizer_updates = 0
+    for microstep in range(1, max_microsteps + 1):
+        accumulation_index = (
+            (microstep - 1) % args.gradient_accumulation_steps
+        ) + 1
+        if cursor + args.batch_size > len(order):
+            rng.shuffle(order)
+            cursor = 0
+        batch = [rows[int(i)] for i in order[cursor:cursor + args.batch_size]]
+        cursor += args.batch_size
+        prompt = _student_prompt_ids(batch, tokenizer, cfg.injection_char)
+        prompt_len = len(prompt)
+        activations = torch.tensor(
+            np.stack([r["activation"] for r in batch]), dtype=torch.float32, device=device)
+        t0 = time.monotonic()
+
+        behavior_logprobs = None
+        if args.objective in {"opd", "forward_kl"}:
+            # Roll out the current student. No gradients are retained through sampling.
+            pids = torch.tensor([prompt], dtype=torch.long, device=device).repeat(len(batch), 1)
+            vectors_ref[0] = activations
+            model.eval()
+            try:
+                with torch.no_grad():
+                    rollout = model.generate(
+                        input_ids=pids, attention_mask=torch.ones_like(pids),
+                        max_new_tokens=args.max_new_tokens, do_sample=True,
+                        temperature=args.temperature, top_p=1.0, top_k=0,
+                        repetition_penalty=1.0, pad_token_id=tokenizer.eos_token_id,
+                        # Passing None explicitly disables EOS stopping. It does
+                        # not alter the sampled distribution, unlike
+                        # min_new_tokens, which masks EOS logits.
+                        **({"eos_token_id": None} if args.fixed_horizon else {}),
+                        return_dict_in_generate=True, output_scores=True,
+                    )
+            finally:
+                vectors_ref[0] = None
+            generated = rollout.sequences
+            if args.fixed_horizon:
+                responses = generated[
+                    :, prompt_len:prompt_len + args.max_new_tokens
+                ].tolist()
+                if any(len(response) != args.max_new_tokens for response in responses):
+                    raise RuntimeError(
+                        "fixed-horizon generation returned a short response"
+                    )
+            else:
+                responses = _trim_generated(generated, prompt_len, eos_ids)
+            if args.objective == "opd":
+                # `scores[j]` is the exact, post-temperature distribution used
+                # by generate for sampled token j (top_p=1/top_k=0 do not
+                # truncate its support). Store it before any optimizer update.
+                behavior_logprobs = torch.zeros(
+                    (len(batch), max(len(x) for x in responses)),
+                    dtype=torch.float32, device=device,
+                )
+                for j, scores in enumerate(rollout.scores):
+                    sampled_j = generated[:, prompt_len + j]
+                    behavior_logprobs[:, j] = F.log_softmax(
+                        scores.float(), dim=-1
+                    ).gather(-1, sampled_j.unsqueeze(-1)).squeeze(-1)
+                behavior_logprobs = behavior_logprobs.detach()
+        else:
+            responses = [list(map(int, r["target_ids"][:args.max_new_tokens])) for r in batch]
+
+        width = max(len(x) for x in responses)
+        valid = torch.zeros((len(batch), width), dtype=torch.bool, device=device)
+        for i, response in enumerate(responses):
+            valid[i, : len(response)] = True
+        # Honor token budgets exactly.  OPD response lengths vary because EOS
+        # terminates a rollout, so merely stopping after a batch can otherwise
+        # give OPD and SFT different loss-bearing token counts.  Keep the first
+        # `remaining` valid positions in stable row-major order in the final
+        # batch; sampled-but-masked suffix tokens remain context only.
+        if args.max_optimized_tokens > 0:
+            remaining = args.max_optimized_tokens - optimized_total
+            if remaining <= 0:
+                break
+            valid = _clip_valid_to_budget(valid, remaining)
+
+        student_seqs = [prompt + response for response in responses]
+        sids, sattn, splens = _right_pad(student_seqs, tokenizer.pad_token_id, device)
+        # Every student sequence has the same prompt prefix.
+        student_prefix_lens = torch.full_like(splens, prompt_len)
+
+        teacher_pred = None
+        if args.objective in {"opd", "forward_kl", "token_kl"}:
+            teacher_contexts = [
+                list(map(int, r["teacher_input_ids"][-args.max_teacher_context:]))
+                for r in batch
+            ]
+            teacher_seqs = [c + response for c, response in zip(teacher_contexts, responses)]
+            tids, tattn, _ = _right_pad(teacher_seqs, tokenizer.pad_token_id, device)
+            teacher_prefix_lens = torch.tensor(
+                [len(x) for x in teacher_contexts], dtype=torch.long, device=device)
+            model.eval()
+            with torch.no_grad(), model.disable_adapter():
+                vectors_ref[0] = None
+                tout = model(input_ids=tids, attention_mask=tattn, use_cache=False).logits
+                teacher_pred = _predictive_logits(tout, teacher_prefix_lens, width).float()
+            del tout, tids, tattn
+
+        # Gradient tracking is independent of train/eval mode.  OPD stays in
+        # eval mode so dropout cannot make the optimized policy differ from the
+        # policy that produced the stored rollout log-probabilities.
+        model.eval() if args.objective == "opd" else model.train()
+        vectors_ref[0] = activations
+        try:
+            sout = model(input_ids=sids, attention_mask=sattn, use_cache=False).logits
+            student_pred = _predictive_logits(sout, student_prefix_lens, width)
+            if args.objective == "opd":
+                sampled_tokens = torch.full(
+                    (len(batch), width), tokenizer.pad_token_id,
+                    dtype=torch.long, device=device,
+                )
+                for i, response in enumerate(responses):
+                    sampled_tokens[i, : len(response)] = torch.tensor(
+                        response, dtype=torch.long, device=device)
+                loss_out = reverse_kl_policy_loss(
+                    teacher_pred, student_pred, sampled_tokens, valid,
+                    temperature=args.temperature,
+                    behavior_logprobs=behavior_logprobs,
+                )
+                loss = loss_out.loss
+                optimized = loss_out.optimized_tokens
+                with torch.no_grad():
+                    agree = (
+                        (teacher_pred.argmax(-1) == student_pred.argmax(-1)) & valid
+                    )
+                    mean_reverse_kl = float(loss_out.reverse_kl_sample[valid].mean())
+                    mean_ratio = float(loss_out.importance_ratio[valid].mean())
+                metrics = {
+                    "sampled_reverse_kl": mean_reverse_kl,
+                    "mean_advantage": float(loss_out.advantage[valid].mean()),
+                    "importance_ratio": mean_ratio,
+                    "student_sampled_logp": float(
+                        loss_out.student_sampled_logp[valid].mean().detach()),
+                    "teacher_sampled_logp": float(
+                        loss_out.teacher_sampled_logp[valid].mean()),
+                    "top1_agreement": float(agree.sum() / valid.sum().clamp_min(1)),
+                    "effective_horizon": float(valid.sum(-1).float().mean()),
+                }
+            elif args.objective == "forward_kl":
+                loss_out = forward_kl_cutoff_loss(
+                    teacher_pred, student_pred, valid, tokenizer.eos_token_id,
+                    args.kl_threshold, args.eos_weight,
+                )
+                loss = loss_out.loss
+                optimized = loss_out.optimized_tokens
+                with torch.no_grad():
+                    agree = ((teacher_pred.argmax(-1) == student_pred.argmax(-1)) & valid)
+                    mean_kl = float(loss_out.kl[valid].mean())
+                    cutoff_rate = float(loss_out.eos_mask.any(-1).float().mean())
+                    horizon = float((loss_out.distill_mask | loss_out.eos_mask).sum(-1).float().mean())
+                    first_cutoffs = loss_out.eos_mask[:, 0].tolist()
+                    first_cutoff_window.extend(bool(x) for x in first_cutoffs)
+                metrics = {
+                    "distill_loss": float(loss_out.distill_loss.detach()),
+                    "eos_loss": float(loss_out.eos_loss.detach()),
+                    "teacher_student_kl": mean_kl,
+                    "top1_agreement": float(agree.sum() / valid.sum().clamp_min(1)),
+                    "cutoff_rate": cutoff_rate,
+                    "effective_horizon": horizon,
+                    "rolling_first_cutoff_rate": (
+                        sum(first_cutoff_window) / len(first_cutoff_window)
+                    ),
+                }
+            elif args.objective == "token_kl":
+                if args.teacher_top_k:
+                    kl = teacher_student_topk_tail_kl(
+                        teacher_pred, student_pred, args.teacher_top_k,
+                    )
+                else:
+                    kl = teacher_student_kl(teacher_pred, student_pred)
+                if not bool(valid.any()):
+                    raise ValueError("token-KL batch has no valid tokens")
+                loss = kl[valid].mean()
+                optimized = int(valid.sum().item())
+                with torch.no_grad():
+                    agree = ((teacher_pred.argmax(-1) == student_pred.argmax(-1)) & valid)
+                metrics = {
+                    "teacher_student_token_kl": float(loss.detach()),
+                    "teacher_top_k": args.teacher_top_k,
+                    "top1_agreement": float(agree.sum() / valid.sum().clamp_min(1)),
+                }
+            else:
+                targets = torch.full((len(batch), width), -100, dtype=torch.long, device=device)
+                for i, response in enumerate(responses):
+                    targets[i, : len(response)] = torch.tensor(response, device=device)
+                targets[~valid] = -100
+                loss = F.cross_entropy(
+                    student_pred.float().reshape(-1, student_pred.shape[-1]),
+                    targets.reshape(-1), ignore_index=-100,
+                )
+                optimized = int(valid.sum().item())
+                metrics = {"sft_ppl": math.exp(min(20.0, float(loss.detach())))}
+            (loss / args.gradient_accumulation_steps).backward()
+        finally:
+            vectors_ref[0] = None
+
+        optimized_total += optimized
+        elapsed = time.monotonic() - wall_start
+        collapsed = (
+            args.objective == "forward_kl"
+            and microstep >= args.early_stop_min_steps
+            and len(first_cutoff_window) == args.early_stop_window_examples
+            and sum(first_cutoff_window) / len(first_cutoff_window)
+            >= args.early_stop_first_cutoff_rate
+        )
+        should_stop = (
+            (args.max_optimized_tokens > 0 and optimized_total >= args.max_optimized_tokens)
+            or (args.max_wall_seconds > 0 and elapsed >= args.max_wall_seconds)
+            or collapsed
+        )
+        accumulation_boundary = (
+            accumulation_index == args.gradient_accumulation_steps
+        )
+        final_microstep = microstep == max_microsteps
+        perform_update = accumulation_boundary or should_stop or final_microstep
+        grad_norm = None
+        if perform_update:
+            # If a token/wall budget ends partway through an accumulated update,
+            # undo the nominal 1/accumulation_steps scaling so the available
+            # microbatches still form an ordinary average.
+            if accumulation_index < args.gradient_accumulation_steps:
+                rescale = args.gradient_accumulation_steps / accumulation_index
+                for param in trainable:
+                    if param.grad is not None:
+                        param.grad.mul_(rescale)
+            grad_norm = torch.nn.utils.clip_grad_norm_(trainable, args.max_grad_norm)
+            optimizer.step()
+            scheduler.step()
+            optimizer.zero_grad(set_to_none=True)
+            optimizer_updates += 1
+            last_step = optimizer_updates
+
+        log = {
+            "step": microstep, "optimizer_update": optimizer_updates,
+            "accumulation_index": accumulation_index,
+            "objective": args.objective, "loss": float(loss.detach()),
+            "optimized_tokens": optimized, "optimized_tokens_total": optimized_total,
+            "sampled_tokens": int(valid.sum().item()),
+            "lr": scheduler.get_last_lr()[0],
+            "grad_norm": float(grad_norm) if grad_norm is not None else None,
+            "step_seconds": time.monotonic() - t0, "wall_seconds": elapsed,
+            **metrics,
+        }
+        with history_path.open("a") as f:
+            f.write(json.dumps(log) + "\n")
+        if wb is not None:
+            wb.log(log, step=microstep)
+        print(" | ".join(f"{k}={v:.4g}" if isinstance(v, float) else f"{k}={v}"
+                         for k, v in log.items() if k not in {"objective"}), flush=True)
+
+        last_meta = {
+            "objective": args.objective, "steps": optimizer_updates,
+            "microsteps": microstep,
+            "batch_size": args.batch_size,
+            "gradient_accumulation_steps": args.gradient_accumulation_steps,
+            "effective_batch_size": (
+                args.batch_size * args.gradient_accumulation_steps
+            ),
+            "optimized_tokens": optimized_total, "wall_seconds": elapsed,
+            "kl_threshold": args.kl_threshold, "eos_weight": args.eos_weight,
+        }
+        last_meta["stop_reason"] = (
+            "first_token_kl_collapse" if collapsed else
+            "token_or_wall_budget" if should_stop else None
+        )
+        save_boundary = (
+            perform_update
+            and (
+                optimizer_updates % args.save_every == 0
+                or should_stop
+                or final_microstep
+            )
+        )
+        if save_boundary:
+            out = _save(
+                model, tokenizer, args.sidecar, save_dir,
+                optimizer_updates, last_meta,
+            )
+            print(f"[save] {out}", flush=True)
+        if should_stop:
+            print(
+                f"[stop] {last_meta['stop_reason']} at optimizer update "
+                f"{optimizer_updates} / microstep {microstep}", flush=True,
+            )
+            break
+
+    (save_dir / "run_summary.json").write_text(json.dumps(last_meta, indent=2))
+    if wb is not None:
+        wb.finish()
+    print(f"done: steps={last_step} optimized_tokens={optimized_total}", flush=True)
+
+
+if __name__ == "__main__":
+    main()

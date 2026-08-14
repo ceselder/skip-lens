@@ -26,6 +26,8 @@ dependencies = [
     "tqdm",
     "huggingface_hub",
     "hf_transfer",
+    # CSPRNG repeat-after-me control uses the public BIP-39 English word list.
+    "mnemonic>=0.21",
     # interface
     "fastapi",
     "uvicorn",

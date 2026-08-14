@@ -359,7 +359,7 @@ def build_lr_lambda(warmup_steps, total_steps, min_lr_ratio):
 
 @torch.no_grad()
 def heldout_av_ce(model, tokenizer, rows, cfg, vectors_ref, device, *,
-                  max_len=1024, micro_batch=16):
+                  max_len=1024, micro_batch=16, append_response_eos=True):
     """Held-out AV val loss: mean token-CE on response tokens over doc-disjoint
     held-out AV rows — the SAME per-response-token CE the AV trains on, so it's
     directly comparable to the train `loss` (train loss is a memorization proxy;
@@ -369,7 +369,7 @@ def heldout_av_ce(model, tokenizer, rows, cfg, vectors_ref, device, *,
         chunk = rows[cs:cs + micro_batch]
         ids, attn, loss_mask, v_batch = _av_prepare_chunk(
             chunk, tokenizer, cfg.injection_char, device,
-            max_len=max_len)
+            max_len=max_len, append_response_eos=append_response_eos)
         vectors_ref[0] = v_batch
         try:
             logits = model(input_ids=ids, attention_mask=attn).logits.float()
@@ -386,7 +386,9 @@ def heldout_av_ce(model, tokenizer, rows, cfg, vectors_ref, device, *,
     return (tot_loss / max(tot_tok, 1)), len(rows)
 
 
-def _av_prepare_chunk(rows, tokenizer, inject_char, device, max_len=1024):
+def _av_prepare_chunk(
+    rows, tokenizer, inject_char, device, max_len=1024, append_response_eos=True,
+):
     """Return (input_ids, attn, loss_mask, v_batch) — all [B, T] (or [B, d])."""
     full_ids_list = []
     prompt_lens = []
@@ -403,8 +405,12 @@ def _av_prepare_chunk(rows, tokenizer, inject_char, device, max_len=1024):
             msgs, tokenize=False, add_generation_prompt=True, enable_thinking=False,
         )
         prompt_ids = tokenizer.encode(prompt_str, add_special_tokens=False)
-        # Response gets a trailing EOS so the model learns to stop.
-        resp = row["response"] + (tokenizer.eos_token or "")
+        # Natural complete responses normally get a trailing EOS. Truncated
+        # future-lens spans can disable it: EOS at an arbitrary crop boundary
+        # would teach premature termination rather than continuation reading.
+        resp = row["response"]
+        if append_response_eos:
+            resp += tokenizer.eos_token or ""
         resp_ids = tokenizer.encode(resp, add_special_tokens=False)
         full = prompt_ids + resp_ids
         if len(full) > max_len:
@@ -581,6 +587,13 @@ def main():
     p.add_argument("--max-rows", type=int, default=None,
                    help="Cap training rows (smoke runs)")
     p.add_argument("--save-every", type=int, default=500)
+    p.add_argument("--save-initial", action="store_true",
+                   help="save the initialized model/adapter as iter_0000000; "
+                        "with --num-steps 0 this creates an untrained AV LoRA")
+    p.add_argument("--append-response-eos", action=argparse.BooleanOptionalAction,
+                   default=True,
+                   help="append EOS to AV responses; disable for arbitrary "
+                        "future-continuation crops that do not end the source")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--wandb-project", default="nla-qwen3-8b")
     p.add_argument("--wandb-name", default=None)
@@ -857,6 +870,27 @@ def main():
     save_dir = Path(args.save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
     save_resolved_config(args, save_dir)   # snapshot merged config for reproducibility
+    metrics_path = save_dir / "metrics.jsonl"
+
+    if args.save_initial:
+        if args.mode != "av":
+            raise ValueError("--save-initial currently supports AV mode only")
+        out_dir = save_dir / "iter_0000000"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        print(f"[save] initialized adapter → {out_dir}", flush=True)
+        model.save_pretrained(str(out_dir))
+        tokenizer.save_pretrained(str(out_dir))
+        import shutil
+        sidecar_src = Path(args.sidecar)
+        if sidecar_src.is_file() and sidecar_src.suffix == ".parquet":
+            sidecar_yaml = sidecar_src.with_suffix(".parquet.nla_meta.yaml")
+            if sidecar_yaml.exists():
+                shutil.copy2(sidecar_yaml, out_dir / "nla_meta.yaml")
+        if args.num_steps == 0:
+            print("done: initialized adapter only.", flush=True)
+            if not args.no_wandb:
+                wandb.finish()
+            return
 
     # ---- debug sampling: fixed example set + accumulating table ----
     sample_rows = rows[: args.n_samples] if args.sample_every > 0 else []
@@ -895,6 +929,7 @@ def main():
                 ids, attn, loss_mask, v_batch = _av_prepare_chunk(
                     chunk_rows, tokenizer, cfg.injection_char, device,
                     max_len=args.max_len,
+                    append_response_eos=args.append_response_eos,
                 )
                 # vectors_ref stays set through .backward() below: AV mode runs
                 # gradient checkpointing BY DEFAULT, the backward-time recompute
@@ -1034,7 +1069,8 @@ def main():
             with amp():
                 h_ce, h_n = heldout_av_ce(
                     model, tokenizer, heldout_av_rows, cfg, vectors_ref, device,
-                    max_len=args.max_len)
+                    max_len=args.max_len,
+                    append_response_eos=args.append_response_eos)
             model.train()
             log["heldout_loss"] = h_ce
             log["heldout_ppl"] = math.exp(h_ce) if h_ce < 30 else float("inf")
@@ -1065,6 +1101,8 @@ def main():
 
         if not args.no_wandb:
             wandb.log(log, step=step)
+        with metrics_path.open("a") as f:
+            f.write(json.dumps({k: v for k, v in log.items() if k != "samples"}) + "\n")
 
         # ---- save ----
         if (step + 1) % args.save_every == 0 or (step + 1) == args.num_steps:
