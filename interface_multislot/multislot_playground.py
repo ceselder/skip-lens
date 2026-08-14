@@ -240,6 +240,10 @@ ARM_SPECS = [
      MULTI_TEMPLATE, None),
     ("armFrozen-K8", "armFrozen", f"{CKPT_ROOT}/multislot_armA_frozen_k8", "multi",
      MULTI_TEMPLATE, None),
+    # K=3, so it needs its own 3-marker template and 3-slot constructions. Worst
+    # arm measured (0.140, 85% degenerate) but included to complete the set.
+    ("armH-K3", "armH", f"{CKPT_ROOT}/multislot_armH_pen3", "multi3",
+     ACTOR_TEMPLATE_MULTI.format(k=3, markers="{injection_char}" * 3), None),
 ]
 
 ARMS = {}          # category -> (adapter, kind, prompt_ids, default vector)
@@ -289,14 +293,14 @@ if JSUF is not None:
     COND_ORDER += ["suffix_shared", "suffix_perslot"]
 # single-slot arms expose every vector source, so any vector can be fed to any
 # decoder — including ones that never trained on it
-REGISTRY = {cat: (COND_ORDER if kind == "multi" else VEC_ORDER)
+REGISTRY = {cat: (COND_ORDER if kind.startswith("multi") else VEC_ORDER)
             for cat, (_a, kind, _p, _d) in ARMS.items()}
 VEC_LABELS = {k: VECSRC[k][0] for k in VEC_ORDER}
 
 RUNS, LOCK = {}, threading.Lock()
 
 
-def slots_for(cond, h42):
+def slots_for(cond, h42, k=K):
     """Delegates to evals/slot_builders.py — the same code path the judged evals
     use, so the playground can never drift from the measured numbers.
 
@@ -307,18 +311,18 @@ def slots_for(cond, h42):
     if cond in ("suffix_shared", "suffix_perslot"):
         if JSUF is None:
             raise HTTPException(404, "suffix-pooled family not built")
-        slots = build_slots("per_offset", h42, JSUF, JPOOL, k=K)
+        slots = build_slots("per_offset", h42, JSUF, JPOOL, k=k)
         return slots, ("shared" if cond == "suffix_shared" else "per_slot")
-    fam, base = JBAR[:K], cond
+    fam, base = JBAR[:k], cond
     for pfx, f in (("regrU_", WREGU), ("regr_", WREG)):
         if cond.startswith(pfx):
             if f is None:
                 raise HTTPException(404, f"{pfx}* family not fitted")
-            fam, base = f, cond[len(pfx):]
+            fam, base = f[:k], cond[len(pfx):]
             break
     # jpool stays the plain pooled J-lens: the constructions that use it
     # (pooled_identical) are defined against the paper's vector by design
-    return build_slots(base, h42, fam, JPOOL, k=K, hbar=HBAR42,
+    return build_slots(base, h42, fam, JPOOL, k=k, hbar=HBAR42,
                        meandirs=MEANDIR), "per_slot"
 
 
@@ -353,13 +357,36 @@ def unit_rms(x):
     return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + EPS)
 
 
+def apply_feed(h, name, layer):
+    """h: [N, d] fp32 at `layer` -> the vector that goes into norm+unembed.
+
+    `name` may be any VECSRC key, so the LM-head (logit-lens) readout can be
+    taken through the regression operator and not only through E[J]. Worth
+    knowing before reading the rows: measured on real continuations, the
+    regression fit is WORSE than E[J] under this readout (+0.038 vs +0.057 span
+    recall) because ridge minimises squared error on the transport while the
+    unembedding sees only direction — but its offset-0 part is a much sharper
+    next-token predictor (+0.349 vs +0.195). Sharper on the immediate token,
+    weaker on the span."""
+    if name in ("", "raw"):
+        return h
+    if name == "j":                      # legacy: the pooled J-lens
+        return (JPOOL @ h.T).T if layer == SRC_L else h
+    if name == "raw_h42":
+        return h
+    if name == "jlens_pooled":
+        return (JPOOL @ h.T).T
+    if name == "mean_only":
+        return (OPS["regr_uniform"] @ HBAR42).unsqueeze(0).expand_as(h)
+    if name in OPS:
+        return (OPS[name] @ h.T).T
+    raise HTTPException(404, f"unknown feed {name!r}")
+
+
 @torch.no_grad()
 def readout(h, head, use_j, layer, topk=10, feed=""):
-    z = h.to(torch.bfloat16)
     mode = feed or ("j" if use_j else "raw")
-    if mode == "j" and layer in JMATS:
-        z = z @ JMATS[layer].T
-    hidden = z.float()
+    hidden = apply_feed(h.float(), mode, layer)
     logits = ((unit_rms(hidden) * GAIN).to(torch.bfloat16) @ W_U.T).float()
     p = torch.softmax(logits, -1)
     v, i = p.topk(topk, -1)
@@ -501,11 +528,22 @@ def allheads(r: AllReq, _=Depends(require_auth)):
     layer = r.layer if r.layer in CAP_LAYERS else SRC_L
     h = run["acts"][layer][r.pos:r.pos + 1]
     k = max(1, min(int(r.topk), 50))
+    # One row per VECTOR SOURCE, all through the model's own norm + lm_head. This
+    # is the untrained linear readout of each operator, so it is directly
+    # comparable to the trained-decoder rollouts below it and shows what the
+    # regression operator looks like without a decoder in the way.
     rows = []
-    for label, feed in [("lm", r.feed or ("j" if r.use_j else "raw"))]:
-        i, p = readout(h, "lm", r.use_j, layer, k, feed=feed)
-        rows.append({"head": label,
-                     "top": [[tok.decode([t]), round(v, 4)] for t, v in zip(i[0], p[0])]})
+    feeds = ([r.feed] if r.feed else
+             (["raw_h42"] + [v for v in VEC_ORDER if v != "raw_h42"]))
+    for feed in feeds:
+        try:
+            i, p = readout(h, "lm", r.use_j, layer, k, feed=feed)
+            rows.append({"head": f"lm_head <- {feed}",
+                         "top": [[tok.decode([t]), round(v, 4)]
+                                 for t, v in zip(i[0], p[0])]})
+        except HTTPException as e:
+            rows.append({"head": f"lm_head <- {feed}", "top": [],
+                         "error": str(e.detail)})
     toks = run["tokens"]
     return {"pos": r.pos, "rows": rows,
             "actual_next": toks[r.pos + 1:r.pos + 9],
@@ -540,10 +578,11 @@ def api_ao(r: AoReq, _=Depends(require_auth)):
                 if s.cat not in ARMS:
                     raise HTTPException(404, f"unknown category {s.cat!r}")
                 aname, kind, pt, dflt = ARMS[s.cat]
-                if kind == "multi":
+                if kind.startswith("multi"):
                     if s.ckpt not in COND_ORDER:
                         raise HTTPException(404, f"unknown condition {s.ckpt!r}")
-                    slots, sscale = slots_for(s.ckpt, h42)
+                    kk = 3 if kind == "multi3" else K
+                    slots, sscale = slots_for(s.ckpt, h42, k=kk)
                     cell["readout"] = _roll(slots, aname, pt, n, smx,
                                             slot_scale=sscale)
                     cell["slot_scale"] = sscale
@@ -572,7 +611,7 @@ UI_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 if __name__ == "__main__":
     for _cat, (_ad, _k, _pt_, _d) in ARMS.items():
         try:
-            _S = K if _k == "multi" else 1
+            _S = 3 if _k == "multi3" else (K if _k == "multi" else 1)
             _roll(torch.zeros(_S, W_U.shape[1], device=dev), _ad, _pt_, n=1, max_new=8)
             print(f"[ms] warmup ok: {_cat}", flush=True)
         except Exception as e:
