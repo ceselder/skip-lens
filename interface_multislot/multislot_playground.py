@@ -1,21 +1,27 @@
 """Multi-slot workspace-lens playground (STANDALONE COPY — does not touch
 interface/, which belongs to a sibling session).
 
-Adapted from interface/weirdchat_lens.py for the K=8 per-offset transported
-lens (arm A) + its single-slot baseline (arm C):
+Paste/run a prompt, click any token, and read it out through any trained decoder
+with any test-time vector. The point of this version is that the VECTOR SOURCE and
+the DECODER are independent dropdowns, so you can feed a vector to a decoder that
+never trained on it — which is how the study's main result was found.
 
-  * paste/run a prompt (system+user+assistant supported), click any token
-  * linear readouts: logit lens / pooled-J̄ lens at L42 and L62
-  * trained readouts via the comparison slots: category "armA-K8" exposes every
-    slot construction from evals/slot_builders.py as the checkpoint dropdown,
-    ordered best-measured-first (judged workspace agreement, 551 items, 0-2):
-      diff 0.586                slot 0 intact, slots 1-7 = horizon increments
-      keep0_deflate_rest        slot 0 intact, 1-7 shared-component removed
-      keep0_gs_rest             slot 0 intact, 1-7 orthogonalized
-      per_offset 0.289          the design as specified: slot d = Jbar^(d) @ h42
-      slot0_only 0.544 / shuffled 0.532 / no_slot0 0.497   knockouts
-      pooled_identical 0.269 / deflated 0.236 / centered 0.218
-    category "armC-1slot" runs the single-slot baseline on Jbar_pooled @ h42.
+Measured on 551 official items, judged workspace agreement, normalised 0-1:
+
+  DECODER          native vector                              score
+  armI (K=1)       regression_avg, uniform d<16               0.539   <- best
+  armC (K=1)       the paper's pooled J-lens vector           0.561 / 0.583 raw
+  armG (K=8)       centered averaged slots                    0.565 (control pending)
+  armE (K=8)       averaged 62->63 slots, read at 42->63      0.527 (control 0.027)
+  armF (K=8)       averaged 42->63 slots, matched             0.517
+  armD (K=8)       REAL penultimate states                    0.309 fed estimates
+  armA (K=8)       LOCAL per-offset transports                0.144 fed averaged
+
+Same decoder, different vector (arm I): regression 0.539 > raw h42 0.453 >
+plain averaged Jacobian 0.342 > position-independent mean 0.018. So E[J] as the
+paper computes it loses to just feeding the activation, and what rescues it is
+fitting the averaged operator by regression instead:
+W* = E[(Jh)h^T].E[hh^T]^-1, which is still ONE fixed corpus-level matrix.
 
   PORT=8807 CUDA_VISIBLE_DEVICES=1 python multislot_playground.py
 """
@@ -52,7 +58,12 @@ def require_auth(c: HTTPBasicCredentials = Depends(_sec)):
 
 BASE = os.environ.get("BASE_CKPT", "Qwen/Qwen3.6-27B")
 JBAR_DIR = os.environ.get("JBAR_DIR", "/workspace/results/offset_jlens")
+REG_DIR = os.environ.get("REG_DIR", "/workspace/results/regression_lens")
 CKPT_ROOT = os.environ.get("CKPT_ROOT", "/workspace/skip-lens/ckpts")
+TARGET_L, SRC_L, K = 62, 42, 8
+NOFF = 16                      # per-offset families are fit out to 16 horizons
+PORT = int(os.environ.get("PORT", 8807))
+dev = "cuda"
 
 
 def _latest(d):
@@ -63,19 +74,6 @@ def _latest(d):
     return os.path.join(d, its[-1]) if its else None
 
 
-# category -> (adapter name, checkpoint dir, "multi" = K slots | "single" = 1 slot)
-ARM_SPECS = [
-    ("armA-K8", "armA", f"{CKPT_ROOT}/multislot_armA_k8", "multi"),
-    ("armFrozen-K8", "armFrozen", f"{CKPT_ROOT}/multislot_armA_frozen_k8", "multi"),
-    ("armE-K8", "armE", f"{CKPT_ROOT}/multislot_armE_twoJ", "multi"),
-    ("armC-1slot", "armC", f"{CKPT_ROOT}/multislot_armC_L62", "single"),
-]
-TARGET_L = 62
-SRC_L = 42
-K = 8
-PORT = int(os.environ.get("PORT", 8807))
-dev = "cuda"
-
 print("[ms] loading model ...", flush=True)
 tok = AutoTokenizer.from_pretrained(BASE)
 model = AutoModelForCausalLM.from_pretrained(
@@ -85,26 +83,87 @@ W_U = model.lm_head.weight.detach()
 GAIN = norm_gain(model).to(dev)
 EPS = float(getattr(tm.norm, "variance_epsilon", getattr(tm.norm, "eps", 1e-6)))
 
+# ---------------------------------------------------------------- operators
 JBAR = [torch.from_numpy(np.load(
     os.path.join(JBAR_DIR, f"Jbar_L{SRC_L}_to_L{TARGET_L}_off{d}.npy"))
-    ).to(dev).float() for d in range(K)]
+    ).to(dev).float() for d in range(NOFF)]
 JPOOL = torch.from_numpy(np.load(
     os.path.join(JBAR_DIR, f"Jbar_L{SRC_L}_to_L{TARGET_L}_offpooled.npy"))).to(dev).float()
 JMATS = {SRC_L: JPOOL.to(torch.bfloat16)}
-_hb = os.path.join(JBAR_DIR, f"hbar_L{SRC_L}.npy")
-HBAR = (torch.from_numpy(np.load(_hb)).float().to(dev) if os.path.exists(_hb) else None)
+HBAR42 = torch.from_numpy(np.load(
+    os.path.join(JBAR_DIR, f"hbar_L{SRC_L}.npy"))).float().to(dev)
 MEANDIR = {}
-for _d in range(K):
+for _d in range(NOFF):
     _p = os.path.join(JBAR_DIR, f"meandir_off{_d}.npy")
     if os.path.exists(_p):
         MEANDIR[_d] = torch.from_numpy(np.load(_p)).float().to(dev)
-print(f"[ms] centering assets: hbar={'yes' if HBAR is not None else 'NO'} "
-      f"meandirs={len(MEANDIR)}", flush=True)
-# Neel's suffix-pooled family: S^(d) = sum_{k>=d} J^(k), so S^0 IS the paper's
-# J-lens and each slot keeps the average-over-everything-after property. Its
-# slots are ~0.99 collinear in DIRECTION but ~9x apart in NORM, so it is served
-# both with per-slot norm-matching (magnitude erased) and with shared scaling
-# (magnitude preserved) to make the difference visible.
+
+# The two poolings the arms were trained with. Weights are computed from the
+# Jbar norms in BOTH cases, so a regression-pooled vector uses exactly the
+# weights its arm trained on rather than its own (different) matrix norms.
+W_UNIFORM = [1.0] * NOFF                                     # arm I
+W_DEEP = [0.0] + [1.0 / float(JBAR[d].norm()) for d in range(1, NOFF)]   # arm K
+
+
+def _pool_from_dir(directory, prefix, weights):
+    """Weighted sum of a per-offset family, accumulated one matrix at a time so
+    peak memory stays at one matrix rather than sixteen. Exact rather than an
+    approximation: sum_d w_d W_d = (sum_d w_d B_d) A^-1, i.e. the same thing as
+    fitting the pooled target directly."""
+    acc = None
+    for d in range(NOFF):
+        if not weights[d]:
+            continue
+        p = os.path.join(directory, f"{prefix}_L{SRC_L}_to_L{TARGET_L}_off{d}.npy")
+        if not os.path.exists(p):
+            return None
+        M = torch.from_numpy(np.load(p)).float().to(dev) * weights[d]
+        acc = M if acc is None else acc + M
+        del M
+    return acc
+
+
+OPS = {
+    "jbar_uniform": _pool_from_dir(JBAR_DIR, "Jbar", W_UNIFORM),
+    "jbar_deep": _pool_from_dir(JBAR_DIR, "Jbar", W_DEEP),
+    "regr_uniform": _pool_from_dir(REG_DIR, "Wreg", W_UNIFORM),
+    "regr_deep": _pool_from_dir(REG_DIR, "Wreg", W_DEEP),
+    "regrU_uniform": _pool_from_dir(REG_DIR, "WregU", W_UNIFORM),
+}
+OPS = {k: v for k, v in OPS.items() if v is not None}
+print("[ms] pooled operators: " + ", ".join(
+    f"{k} |M|={float(v.norm()):.1f}" for k, v in OPS.items()), flush=True)
+
+# Every entry is one fixed corpus-level matrix applied to h42 (or h42 itself),
+# so none of them can see the test context's own gradient. Labels carry the
+# measured score of the arm whose NATIVE vector this is.
+VECSRC = {
+    "regr_uniform": ("regression W*, pooled d<16  [armI 0.539]",
+                     lambda h: OPS["regr_uniform"] @ h),
+    "jlens_pooled": ("the paper's pooled J-lens vector  [armC 0.561]",
+                     lambda h: JPOOL @ h),
+    "raw_h42": ("raw h42, no operator  [armI 0.453 / armK 0.517]",
+                lambda h: h),
+    "regr_deep": ("regression W*, deep-only norm-eq  [armK 0.423]",
+                  lambda h: OPS["regr_deep"] @ h),
+    "jbar_deep": ("averaged E[J], deep-only norm-eq  [armK 0.389]",
+                  lambda h: OPS["jbar_deep"] @ h),
+    "jbar_uniform": ("averaged E[J], pooled d<16  [armI 0.342]",
+                     lambda h: OPS["jbar_uniform"] @ h),
+    "regrU_uniform": ("regression W* fit on v/||v||, pooled d<16  [untested]",
+                      lambda h: OPS["regrU_uniform"] @ h),
+    "mean_only": ("position-independent mean  [FLOOR, armI 0.018]",
+                  lambda h: OPS["regr_uniform"] @ HBAR42),
+}
+# mean_only is built from regr_uniform, so it survives only if that one did
+VECSRC = {k: v for k, v in VECSRC.items()
+          if k in ("raw_h42", "jlens_pooled") or k in OPS
+          or (k == "mean_only" and "regr_uniform" in OPS)}
+VEC_ORDER = [k for k in ("regr_uniform", "jlens_pooled", "raw_h42", "regr_deep",
+                         "jbar_deep", "jbar_uniform", "regrU_uniform", "mean_only")
+             if k in VECSRC]
+JLAYERS, CAP_LAYERS = [SRC_L], [SRC_L, TARGET_L]
+
 SUFFIX_DIR = os.path.join(JBAR_DIR, "suffix")
 JSUF = None
 if os.path.isdir(SUFFIX_DIR):
@@ -112,46 +171,56 @@ if os.path.isdir(SUFFIX_DIR):
         JSUF = [torch.from_numpy(np.load(os.path.join(
             SUFFIX_DIR, f"Jbar_L{SRC_L}_to_L{TARGET_L}_off{d}.npy"))).to(dev).float()
             for d in range(K)]
-        print(f"[ms] suffix-pooled family loaded from {SUFFIX_DIR}", flush=True)
     except Exception as e:
         print(f"[ms] suffix family unavailable: {e!r}", flush=True)
-JLAYERS = [SRC_L]
-CAP_LAYERS = [SRC_L, TARGET_L]
-print(f"[ms] {K} per-offset Jbar + pooled loaded", flush=True)
 
+# ---------------------------------------------------------------- adapters
 from peft import PeftModel
 from nla.datagen.injection_tokens import find_injection_token
 from nla.schema import compute_canonical_neighbors
 from nla.utils.hooks import register_karvonen_hook
 from pretrain.finalize_jvp_spans import ACTOR_TEMPLATE_MULTI
 
-SINGLE_TEMPLATE = ("You are shown an internal activation vector captured from a language model "
-    "as it reads a passage of text. The vector, enclosed in <concept> tags, is "
-    "taken at one position and encodes what the model is about to generate next. "
-    "Output the text the model most likely produces immediately after this point.\n\n"
-    "<concept>{injection_char}</concept>")
+# arm C was trained with "about to generate next"; arms I and K with "over the
+# next several tokens". Feeding an arm a template it never saw penalises it for
+# the wrong reason, so each decoder keeps its own.
+T_NEXT = ("You are shown an internal activation vector captured from a language model "
+          "as it reads a passage of text. The vector, enclosed in <concept> tags, is "
+          "taken at one position and encodes what the model is about to generate next. "
+          "Output the text the model most likely produces immediately after this point."
+          "\n\n<concept>{injection_char}</concept>")
+T_SPAN = ("You are shown an internal activation vector captured from a language model "
+          "as it reads a passage of text. The vector, enclosed in <concept> tags, is "
+          "taken at one position and encodes what the model is about to generate over "
+          "the next several tokens. Output the text the model most likely produces "
+          "immediately after this point.\n\n<concept>{injection_char}</concept>")
 MULTI_TEMPLATE = ACTOR_TEMPLATE_MULTI.format(k=K, markers="{injection_char}" * K)
 
-ARMS = {}          # category -> (adapter_name, kind)
+# (category, adapter, ckpt dir, kind, template, default vector for single arms)
+ARM_SPECS = [
+    ("armI-1slot", "armI", f"{CKPT_ROOT}/armI_pooled_single", "single", T_SPAN,
+     "regr_uniform"),
+    ("armK-1slot", "armK", f"{CKPT_ROOT}/armK_deep_single", "single", T_SPAN,
+     "regr_deep"),
+    ("armC-1slot", "armC", f"{CKPT_ROOT}/multislot_armC_L62", "single", T_NEXT,
+     "jlens_pooled"),
+    ("armG-K8", "armG", f"{CKPT_ROOT}/multislot_armG_centered", "multi",
+     MULTI_TEMPLATE, None),
+    ("armE-K8", "armE", f"{CKPT_ROOT}/multislot_armE_twoJ", "multi",
+     MULTI_TEMPLATE, None),
+    ("armF-K8", "armF", f"{CKPT_ROOT}/multislot_armF_matched", "multi",
+     MULTI_TEMPLATE, None),
+    ("armD-K8", "armD", f"{CKPT_ROOT}/multislot_armD_pen8", "multi",
+     MULTI_TEMPLATE, None),
+    ("armA-K8", "armA", f"{CKPT_ROOT}/multislot_armA_k8", "multi",
+     MULTI_TEMPLATE, None),
+    ("armFrozen-K8", "armFrozen", f"{CKPT_ROOT}/multislot_armA_frozen_k8", "multi",
+     MULTI_TEMPLATE, None),
+]
+
+ARMS = {}          # category -> (adapter, kind, prompt_ids, default vector)
 PEFT = None
-for cat, aname, root, kind in ARM_SPECS:
-    ck = _latest(root)
-    if ck is None:
-        print(f"[ms] skip {cat}: no checkpoint under {root}", flush=True)
-        continue
-    if PEFT is None:
-        PEFT = PeftModel.from_pretrained(model, ck, adapter_name=aname).eval()
-    else:
-        PEFT.load_adapter(ck, adapter_name=aname)
-    ARMS[cat] = (aname, kind)
-    print(f"[ms] loaded {cat} <- {ck}", flush=True)
-assert PEFT is not None, "no arm checkpoints found"
 inj_char, inj_id = find_injection_token(tok)
-# canonical flanks are identical for a run of 1 and a run of K (same tag tokens)
-_left, _right = compute_canonical_neighbors(tok, MULTI_TEMPLATE, inj_char, inj_id)
-_vref = [None]
-_sref = [None, 1]        # [slot_scale, n_slots] — see nla/utils/hooks.py
-register_karvonen_hook(PEFT, _vref, inj_id, _left, _right, scale_ref=_sref)
 
 
 def _pt(template):
@@ -161,46 +230,62 @@ def _pt(template):
     return torch.tensor([tok.encode(s, add_special_tokens=False)], device=dev)
 
 
-_PT_MULTI = _pt(MULTI_TEMPLATE)
-_PT_SINGLE = _pt(SINGLE_TEMPLATE)
-print("[ms] armA + armC adapters loaded", flush=True)
+for cat, aname, root, kind, tmpl, dflt in ARM_SPECS:
+    ck = _latest(root)
+    if ck is None:
+        print(f"[ms] skip {cat}: no checkpoint under {root}", flush=True)
+        continue
+    if PEFT is None:
+        PEFT = PeftModel.from_pretrained(model, ck, adapter_name=aname).eval()
+    else:
+        PEFT.load_adapter(ck, adapter_name=aname)
+    ARMS[cat] = (aname, kind, _pt(tmpl), dflt)
+    print(f"[ms] loaded {cat} <- {ck}", flush=True)
+assert PEFT is not None, "no arm checkpoints found"
 
-# Ordered so the first entries are the best-scoring constructions (judged
-# workspace agreement, 551 official items, judge scale 0-2):
-#   diff 0.586 | slot0_only 0.544 | shuffled 0.532 | no_slot0 0.497
-#   per_offset 0.289 (the design as specified) | pooled_identical 0.269
-#   deflated 0.236 | centered 0.218      keep0_* are the newest, untested here
-COND_ORDER = ["diff", "keep0_deflate_rest", "keep0_gs_rest", "per_offset",
-              "slot0_only", "shuffled_slots", "no_slot0", "gs",
-              "pooled_identical", "deflated", "centered"]
+# canonical flanks are identical for a run of 1 and a run of K (same tag tokens)
+_left, _right = compute_canonical_neighbors(tok, MULTI_TEMPLATE, inj_char, inj_id)
+_vref = [None]
+_sref = [None, 1]        # [slot_scale, n_slots] — see nla/utils/hooks.py
+register_karvonen_hook(PEFT, _vref, inj_id, _left, _right, scale_ref=_sref)
+
+COND_ORDER = ["per_offset", "centered", "diff", "keep0_deflate_rest",
+              "keep0_gs_rest", "slot0_only", "shuffled_slots", "no_slot0", "gs",
+              "pooled_identical", "deflated"]
 COND_ORDER = [c for c in COND_ORDER if c in CONDITIONS]
 if JSUF is not None:
-    # served through the same slot builders, but on the suffix family
     COND_ORDER = ["suffix_shared", "suffix_perslot"] + COND_ORDER
-REGISTRY = {cat: ({c: c for c in COND_ORDER} if kind == "multi"
-                  else {"pooledJ": "pooledJ"})
-            for cat, (_a, kind) in ARMS.items()}
+# single-slot arms expose every vector source, so any vector can be fed to any
+# decoder — including ones that never trained on it
+REGISTRY = {cat: (COND_ORDER if kind == "multi" else VEC_ORDER)
+            for cat, (_a, kind, _p, _d) in ARMS.items()}
+VEC_LABELS = {k: VECSRC[k][0] for k in VEC_ORDER}
 
 RUNS, LOCK = {}, threading.Lock()
 
 
 def slots_for(cond, h42):
-    """Delegates to evals/slot_builders.py — the same code path the judged
-    evals use, so the playground can never drift from the measured numbers.
-    Returns (slots, slot_scale)."""
+    """Delegates to evals/slot_builders.py — the same code path the judged evals
+    use, so the playground can never drift from the measured numbers."""
     if cond in ("suffix_shared", "suffix_perslot"):
         if JSUF is None:
             raise HTTPException(404, "suffix-pooled family not built")
         slots = build_slots("per_offset", h42, JSUF, JPOOL, k=K)
         return slots, ("shared" if cond == "suffix_shared" else "per_slot")
-    return build_slots(cond, h42, JBAR, JPOOL, k=K, hbar=HBAR,
+    return build_slots(cond, h42, JBAR[:K], JPOOL, k=K, hbar=HBAR42,
                        meandirs=MEANDIR), "per_slot"
+
+
+def vec_for(name, h42):
+    if name not in VECSRC:
+        raise HTTPException(404, f"unknown vector source {name!r}")
+    return VECSRC[name][1](h42).unsqueeze(0)
 
 
 @torch.no_grad()
 def _roll(vectors, adapter, prompt_ids, n=1, max_new=14, temp=0.7,
           slot_scale="per_slot"):
-    """vectors: [S, d] (S = K for the 8-slot arms, 1 for arm C), tiled per row."""
+    """vectors: [S, d] (S = K for the 8-slot arms, 1 for the single-slot arms)."""
     B = max(1, n)
     ids = prompt_ids.repeat(B, 1)
     PEFT.set_adapter(adapter)
@@ -284,7 +369,8 @@ def presets(_=Depends(require_auth)):
 
 @app.get("/api/registry")
 def api_registry(_=Depends(require_auth)):
-    return {"categories": {cat: list(ckpts.keys()) for cat, ckpts in REGISTRY.items()}}
+    return {"categories": {cat: list(v) for cat, v in REGISTRY.items()},
+            "vector_labels": VEC_LABELS}
 
 
 @app.post("/api/run")
@@ -395,9 +481,9 @@ def api_ao(r: AoReq, _=Depends(require_auth)):
     h42 = run["acts"][SRC_L][r.pos].float()
     n, mx = max(1, min(int(r.n), 6)), max(4, min(int(r.max_new), 48))
     slots_req = r.slots if r.slots is not None else [
-        LensSlot(cat="armA-K8", ckpt="per_offset"),
-        LensSlot(cat="armA-K8", ckpt="pooled_identical"),
-        LensSlot(cat="armC-1slot", ckpt="pooledJ"),
+        LensSlot(cat="armI-1slot", ckpt="regr_uniform"),
+        LensSlot(cat="armI-1slot", ckpt="jbar_uniform"),
+        LensSlot(cat="armI-1slot", ckpt="raw_h42"),
     ]
     out_slots = []
     with LOCK:
@@ -407,17 +493,19 @@ def api_ao(r: AoReq, _=Depends(require_auth)):
                 smx = max(1, min(int(s.max_new), 64)) if s.max_new else mx
                 if s.cat not in ARMS:
                     raise HTTPException(404, f"unknown category {s.cat!r}")
-                aname, kind = ARMS[s.cat]
+                aname, kind, pt, dflt = ARMS[s.cat]
                 if kind == "multi":
                     if s.ckpt not in COND_ORDER:
                         raise HTTPException(404, f"unknown condition {s.ckpt!r}")
                     slots, sscale = slots_for(s.ckpt, h42)
-                    cell["readout"] = _roll(slots, aname, _PT_MULTI, n, smx,
+                    cell["readout"] = _roll(slots, aname, pt, n, smx,
                                             slot_scale=sscale)
                     cell["slot_scale"] = sscale
                 else:
-                    cell["readout"] = _roll((JPOOL @ h42).unsqueeze(0), aname,
-                                            _PT_SINGLE, n, smx)
+                    src = s.ckpt or dflt
+                    cell["readout"] = _roll(vec_for(src, h42), aname, pt, n, smx)
+                    cell["vector"] = VECSRC[src][0]
+                    cell["native"] = (src == dflt)
                 cell["max_new"] = smx
             except HTTPException as e:
                 cell["readout"], cell["error"] = [], str(e.detail)
@@ -436,14 +524,13 @@ UI_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                        "multislot_ui.html")
 
 if __name__ == "__main__":
-    _z = torch.zeros(W_U.shape[1], device=dev)
-    _warm = [(a, _PT_MULTI if k == "multi" else _PT_SINGLE, K if k == "multi" else 1)
-             for _c, (a, k) in ARMS.items()]
-    for _ad, _pt_, _S in _warm:
+    for _cat, (_ad, _k, _pt_, _d) in ARMS.items():
         try:
-            _roll(torch.zeros(_S, W_U.shape[1], device=dev), _ad, _pt_, n=1, max_new=14)
-            print(f"[ms] warmup: {_ad} compiled", flush=True)
+            _S = K if _k == "multi" else 1
+            _roll(torch.zeros(_S, W_U.shape[1], device=dev), _ad, _pt_, n=1, max_new=8)
+            print(f"[ms] warmup ok: {_cat}", flush=True)
         except Exception as e:
-            print(f"[ms] warmup {_ad} skipped: {e!r}", flush=True)
+            print(f"[ms] warmup {_cat} skipped: {e!r}", flush=True)
+    print(f"[ms] {len(ARMS)} decoders x {len(VEC_ORDER)} vector sources", flush=True)
     print(f"[ms] serving on 0.0.0.0:{PORT}", flush=True)
     uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="warning")
