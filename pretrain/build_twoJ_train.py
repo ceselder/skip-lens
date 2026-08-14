@@ -54,6 +54,19 @@ def main():
     ap.add_argument("--out-val", required=True)
     ap.add_argument("--base-model", default="Qwen/Qwen3.6-27B")
     ap.add_argument("--val-frac", type=float, default=0.03)
+    ap.add_argument("--center", action="store_true",
+                    help="subtract the SOURCE-space mean before transporting: "
+                         "Jbar^(d) @ (h_src - mu_src). Must be paired with the "
+                         "same treatment at test time (the eval's `centered` "
+                         "condition), otherwise the decoder meets a "
+                         "transformation it never saw in training.")
+    ap.add_argument("--whiten", action="store_true",
+                    help="also apply Sigma_src^{-1/2} after centering. NOTE the "
+                         "L42 covariance has condition ~1e4 after ridge, so this "
+                         "amplifies the lowest-variance (plausibly noise) "
+                         "directions ~100x relative to the top ones.")
+    ap.add_argument("--stdz-dir", default="/workspace/results/offset_jlens",
+                    help="holds hbar_L{src}.npy and whiten_L{src}.npy")
     args = ap.parse_args()
     K = args.k_slots
     dev = "cuda" if torch.cuda.is_available() else "cpu"
@@ -63,6 +76,16 @@ def main():
     Jb = [torch.from_numpy(np.load(
         f"{args.jbar_dir}/Jbar_L{args.src_layer}_to_L{args.tgt_layer}_off{d}.npy")
         ).float().to(dev) for d in range(K)]
+    MU = W = None
+    if args.center or args.whiten:
+        MU = torch.from_numpy(np.load(
+            f"{args.stdz_dir}/hbar_L{args.src_layer}.npy")).float().to(dev)
+        print(f"centering with mu_L{args.src_layer} (||mu||={float(MU.norm()):.1f})",
+              flush=True)
+    if args.whiten:
+        W = torch.from_numpy(np.load(
+            f"{args.stdz_dir}/whiten_L{args.src_layer}.npy")).float().to(dev)
+        print(f"whitening with Sigma_L{args.src_layer}^-1/2", flush=True)
     print(f"source column: {src_col}", flush=True)
     print(f"loaded {K} Jbar_L{args.src_layer}->L{args.tgt_layer} matrices "
           f"(|J| d0={float(Jb[0].norm()):.2f} d7={float(Jb[-1].norm()):.2f})", flush=True)
@@ -102,6 +125,10 @@ def main():
             if not keep:
                 continue
             H = torch.tensor(np.array(h62, dtype=np.float32), device=dev)   # [B, d]
+            if MU is not None:                       # source-space standardize
+                H = H - MU
+            if W is not None:
+                H = H @ W.T
             slots = torch.stack([(Jb[d] @ H.T).T for d in range(K)], dim=1)  # [B, K, d]
             out = {args.out_train: [], args.out_val: []}
             for i, (r, resp) in enumerate(keep):
@@ -142,6 +169,8 @@ def main():
         "extraction": {"base_model": args.base_model, "d_model": int(Jb[0].shape[0]),
                        "layer_index": args.tgt_layer, "source_layer": args.src_layer,
                        "transport": f"averaged_perOffset_L{args.src_layer}_to_L{args.tgt_layer}",
+                       "source_centered": bool(args.center or args.whiten),
+                       "source_whitened": bool(args.whiten),
                        "norm": "none"},
         "tokens": {"injection_char": inj_char, "injection_token_id": inj_id,
                    "injection_left_neighbor_id": left,
