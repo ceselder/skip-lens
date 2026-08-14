@@ -49,6 +49,20 @@ ap.add_argument("--pool-from", type=int, default=1,
                      "1 excludes the immediate-token term that raw h42 already carries")
 ap.add_argument("--out-dir", default="/workspace/results/regression_lens")
 ap.add_argument("--save-matrices", action="store_true")
+ap.add_argument("--target-mode", choices=["raw", "unit"], default="raw",
+                help="raw fits the transport itself, which is what a trained "
+                     "decoder is trained on. unit fits v/||v||, aligning the "
+                     "objective with a LOGIT-LENS readout: that path applies "
+                     "RMSNorm before the unembedding, so the vector's norm is "
+                     "discarded and only its direction is read. Ridge on the raw "
+                     "target spends its capacity on large-norm directions the "
+                     "unembedding cannot see, which is why W*(raw) beats E[J] in "
+                     "vector space (0.336 vs 0.165) yet LOSES in readout space "
+                     "(+0.038 vs +0.056). Per-row normalisation is not a fixed "
+                     "output transform, so unlike an elementwise reweighting it "
+                     "genuinely changes the solution.")
+ap.add_argument("--tag", default="",
+                help="suffix for saved matrix filenames, so raw and unit fits coexist")
 args = ap.parse_args()
 dev = "cuda"
 K, D = args.k, 5120
@@ -80,10 +94,16 @@ for f in files:
         v = torch.tensor(np.array([np.frombuffer(r["transported_vectors"], np.float16)
                                    .reshape(16, -1)[:K] for r in t], dtype=np.float32),
                          device=dev).double()
+        vt = v
+        if args.target_mode == "unit":
+            vt = v / (v.norm(dim=-1, keepdim=True) + 1e-9)
         A += h.T @ h
         for d in range(K):
-            B[d] += v[:, d].T @ h
-        BP += v[:, args.pool_from:].sum(1).T @ h
+            B[d] += vt[:, d].T @ h
+        pooled = vt[:, args.pool_from:].sum(1)
+        if args.target_mode == "unit":
+            pooled = pooled / (pooled.norm(dim=-1, keepdim=True) + 1e-9)
+        BP += pooled.T @ h
         n += h.shape[0]
     print(f"  {os.path.basename(f)}: {n} rows", flush=True)
     if n >= args.max_fit_rows:
@@ -173,10 +193,11 @@ print(f"\nBEST lambda {best[0]:g} on the pooled target: {best[1]:+.4f} "
 if args.save_matrices and best[0] is not None:
     Ainv = torch.linalg.inv(A + best[0] * eye)
     for d in range(K):
-        np.save(f"{args.out_dir}/Wreg_L42_to_L62_off{d}.npy",
+        np.save(f"{args.out_dir}/Wreg{args.tag}_L42_to_L62_off{d}.npy",
                 (B[d] @ Ainv).float().cpu().numpy())
-    np.save(f"{args.out_dir}/Wreg_L42_to_L62_pooled{args.pool_from}.npy",
+    np.save(f"{args.out_dir}/Wreg{args.tag}_L42_to_L62_pooled{args.pool_from}.npy",
             (BP @ Ainv).float().cpu().numpy())
     print(f"saved matrices to {args.out_dir}")
-json.dump(res, open(f"{args.out_dir}/fit_report.json", "w"), indent=1)
-print(f"wrote {args.out_dir}/fit_report.json", flush=True)
+res["target_mode"] = args.target_mode
+json.dump(res, open(f"{args.out_dir}/fit_report{args.tag}.json", "w"), indent=1)
+print(f"wrote {args.out_dir}/fit_report{args.tag}.json", flush=True)
