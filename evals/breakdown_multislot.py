@@ -1,5 +1,12 @@
 """Per-condition breakdown of the judged multi-slot eval.
 
+SCALE WARNING. The judge emits 0/1/2 per record. judge_fedlayer.py's own summary
+prints those DIVIDED BY 2 (normalized 0-1); this script used to print the raw
+0-2 mean. Reading the baseline off one and the arms off the other understated
+the baseline by 2x and produced hours of bogus "reaches parity" claims. Both
+scales are now printed, normalized first, and `norm` is what the JSON carries
+as the primary field.
+
 judge_fedlayer.py pools every record it is handed, so the 5 arm-A conditions
 (per_offset + 4 knockouts) collapse into one number. This splits them back
 apart on the `condition` field and prints workspace/answer agreement per
@@ -36,6 +43,7 @@ d = json.load(open(args.judged))
 recs = (d if isinstance(d, list)
         else d.get("detail") or d.get("records") or d.get("items") or [])
 print(f"n records: {len(recs)}")
+print("scores below are NORMALIZED 0-1 (judge emits 0/1/2); raw in parens")
 print(f"keys: {sorted(recs[0].keys())}")
 
 
@@ -75,11 +83,14 @@ for c, v in sorted(by.items(), key=lambda x: -(st.mean(x[1]["w"]) if x[1]["w"] e
     n = len(v["w"])
     se = (st.stdev(v["w"]) / (n ** 0.5)) if n > 1 else 0.0
     dg = v["deg"] / v["n_out"] if v["n_out"] else float("nan")
-    rows.append({"condition": c, "workspace": w, "answer": a, "n": n, "se": se,
+    rows.append({"condition": c,
+                 "workspace": w / 2, "answer": a / 2,          # normalized 0-1
+                 "workspace_raw02": w, "answer_raw02": a,      # raw judge scale
+                 "n": n, "se": se / 2, "se_raw02": se,
                  "degenerate_frac": dg, "score_hist": dict(v["hist"])})
     flag = "  <-- MOSTLY DEGENERATE" if dg > 0.25 else ""
-    print(f"{c:20s} workspace={w:.3f}±{se:.3f}  answer={a:.3f}  n={n}  "
-          f"degenerate={100*dg:.0f}%  hist(0/1/2)="
+    print(f"{c:20s} workspace={w/2:.3f}±{se/2:.3f} (raw {w:.3f})  "
+          f"answer={a/2:.3f}  n={n}  degenerate={100*dg:.0f}%  hist(0/1/2)="
           f"{v['hist'][0]}/{v['hist'][1]}/{v['hist'][2]}{flag}")
 
 ex = []
