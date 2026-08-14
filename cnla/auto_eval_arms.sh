@@ -52,6 +52,7 @@ CK=/workspace/skip-lens/ckpts
 JD_PEN=/workspace/results/offset_jlens          # 42->62 family
 JD_LAST=/workspace/results/offset_jlens_last    # 42->63 and 62->63 families
 
+run_arm armD "$CK/multislot_armD_pen8"      "$JD_PEN"  "per_offset,diff"
 run_arm armF "$CK/multislot_armF_matched"  "$JD_PEN"  "per_offset,diff"
 run_arm armG "$CK/multislot_armG_centered" "$JD_LAST" "centered,per_offset,diff"
 run_arm armE "$CK/multislot_armE_twoJ"     "$JD_LAST" "per_offset,diff"
