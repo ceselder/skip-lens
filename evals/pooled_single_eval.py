@@ -37,6 +37,11 @@ ap.add_argument("--base-ckpt", default="Qwen/Qwen3.6-27B")
 ap.add_argument("--src-layer", type=int, default=42)
 ap.add_argument("--tgt-layer", type=int, default=62)
 ap.add_argument("--n-offsets", type=int, default=16)
+ap.add_argument("--deep-from", type=int, default=0,
+                help="exclude offsets below this from the pooled test vector. "
+                     "MUST match the value used to build the training data, since "
+                     "the weights are part of the arm's design, not a mismatch.")
+ap.add_argument("--weight-mode", choices=["uniform", "norm_eq"], default="uniform")
 ap.add_argument("--evals-dir", required=True)
 ap.add_argument("--conditions", default="pooled_avg,raw_h42,mean_only")
 ap.add_argument("--n-ao", type=int, default=4)
@@ -73,15 +78,19 @@ register_karvonen_hook(model, vref, inj_id, left, right)
 torch.set_grad_enabled(False)
 
 # token-pooled AVERAGED gradient = sum over offsets of the averaged per-offset J
-JP = None
-for d in range(args.n_offsets):
+JP, WLOG = None, []
+for d in range(args.deep_from, args.n_offsets):
     p = os.path.join(args.jbar_dir,
                      f"Jbar_L{args.src_layer}_to_L{args.tgt_layer}_off{d}.npy")
     if not os.path.exists(p):
         break
     M = torch.from_numpy(np.load(p)).float().to(dev)
-    JP = M if JP is None else JP + M
+    w = 1.0 / float(M.norm()) if args.weight_mode == "norm_eq" else 1.0
+    WLOG.append(w)
+    JP = w * M if JP is None else JP + w * M
 assert JP is not None, f"no Jbar matrices in {args.jbar_dir}"
+print(f"[ps] pooling offsets {args.deep_from}..{args.n_offsets - 1} "
+      f"({args.weight_mode}), weights " + " ".join(f"{w:.3f}" for w in WLOG), flush=True)
 HBAR = torch.from_numpy(np.load(
     os.path.join(args.jbar_dir, f"hbar_L{args.src_layer}.npy"))).float().to(dev)
 MEANVEC = JP @ HBAR

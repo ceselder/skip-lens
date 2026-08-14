@@ -63,9 +63,34 @@ def main():
                          "to support this many)")
     ap.add_argument("--pool-upto", type=int, default=16,
                     help="sum local transports over d < this")
+    ap.add_argument("--deep-from", type=int, default=0,
+                    help="start the sum at this offset. Setting it to 1 excludes "
+                         "the current-token term, which is the only offset where "
+                         "raw h42 already beats the Jacobian (0.437 vs 0.395) and "
+                         "whose weight dominates a uniform sum since "
+                         "||Jbar^(0)||=30.8 against 6.6, 3.4, ... Excluding it is "
+                         "what makes the averaged Jacobian additive over h42: "
+                         "+0.074 alignment margin, and +0.044 vs +0.019 on "
+                         "context-specific future-token recall.")
+    ap.add_argument("--weight-mode", choices=["uniform", "norm_eq"], default="uniform",
+                    help="norm_eq sets w_d = 1/||Jbar^(d)|| so every horizon "
+                         "contributes comparably instead of offset 0 swamping the "
+                         "rest. The SAME weights are used to build the test vector, "
+                         "so this is a design choice, not a train/test mismatch.")
+    ap.add_argument("--jbar-dir", default="/workspace/results/offset_jlens",
+                    help="only read for its matrix norms under --weight-mode norm_eq")
     ap.add_argument("--val-frac", type=float, default=0.03)
     ap.add_argument("--min-h42-cos", type=float, default=0.99)
     args = ap.parse_args()
+
+    W = np.zeros(16, dtype=np.float32)
+    if args.weight_mode == "norm_eq":
+        for d in range(args.deep_from, args.pool_upto):
+            J = np.load(f"{args.jbar_dir}/Jbar_L42_to_L62_off{d}.npy", mmap_mode="r")
+            W[d] = 1.0 / float(np.linalg.norm(J))
+    else:
+        W[args.deep_from:args.pool_upto] = 1.0
+    print("pool weights:", " ".join(f"{x:.4f}" for x in W), flush=True)
 
     tok = AutoTokenizer.from_pretrained(args.base_model)
     files = sorted(f for f in glob.glob(args.shards_glob)
@@ -101,8 +126,8 @@ def main():
                     n["roundtrip"] += 1
                     continue
                 tv = np.frombuffer(r["transported_vectors"], dtype=np.float16)
-                tv = tv.reshape(16, -1)[: args.pool_upto].astype(np.float32)
-                v = tv.sum(0)                      # token-pooled LOCAL transport
+                tv = tv.reshape(16, -1).astype(np.float32)
+                v = (W[:, None] * tv).sum(0)       # token-pooled LOCAL transport
                 dest = args.out_val if is_val(r["doc_id"], args.val_frac) else args.out_train
                 out[dest].append({
                     "prompt": prompt_msgs, "response": resp,
@@ -135,7 +160,10 @@ def main():
             "schema_version": 1, "keep_debug_metadata": True, "n_slots": 1,
             "extraction": {"base_model": args.base_model, "d_model": 5120,
                            "layer_index": 62, "source_layer": 42,
-                           "transport": f"token_pooled_LOCAL_jacobian_upto{args.pool_upto}",
+                           "transport": (f"token_pooled_LOCAL_jacobian_"
+                                         f"{args.weight_mode}_d{args.deep_from}"
+                                         f"to{args.pool_upto}"),
+                           "pool_weights": [float(x) for x in W],
                            "test_time_counterpart": "token_pooled_AVERAGED jacobian (J-lens vector)",
                            "norm": "none"},
             "tokens": {"injection_char": ic, "injection_token_id": iid,
