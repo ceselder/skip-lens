@@ -59,8 +59,12 @@ L = args.span_len
 cos = torch.nn.functional.cosine_similarity
 
 tok = AutoTokenizer.from_pretrained(args.base_ckpt)
+# eager attention is REQUIRED, not a preference: the double-VJP is
+# reverse-over-reverse, and aten::_scaled_dot_product_efficient_attention_backward
+# has no derivative, so SDPA cannot be differentiated twice. The original pass-2
+# collection loads eager for the same reason.
 model = AutoModelForCausalLM.from_pretrained(
-    args.base_ckpt, torch_dtype=torch.bfloat16, attn_implementation="sdpa").to(dev).eval()
+    args.base_ckpt, torch_dtype=torch.bfloat16, attn_implementation="eager").to(dev).eval()
 PAD = tok.pad_token_id if tok.pad_token_id is not None else tok.eos_token_id
 
 JP = None
@@ -105,7 +109,12 @@ for si, (key, t_ent) in enumerate(by_span.items()):
         if len(cid) < 8:
             continue
         cid = cid[-480:]
-        seqs.append(cid + span_ids)
+        # dvjp_transports gathers h62 at p+0 .. p+N_OFFSETS-1 unconditionally, so
+        # the sequence must extend N_OFFSETS past p even though only d < L is read.
+        # The original collection appended a 16-token rollout and never hit this;
+        # a 4-token span alone indexes out of bounds. Filler is attended (mask=1)
+        # so no softmax row is fully masked, and its transports are discarded.
+        seqs.append(cid + span_ids + [PAD] * N_OFFSETS)
         plist.append(len(cid) - 1)
     if len(seqs) < 4:
         continue
