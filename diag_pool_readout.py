@@ -27,6 +27,9 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--shards", default="/workspace/data/spans_jvp/shard_3_jvp.parquet")
+ap.add_argument("--prefix", default="Jbar",
+                help="Jbar for the plain averaged Jacobians, Wreg for the "
+                     "ridge-regression maps from fit_regression_lens.py")
 ap.add_argument("--jbar-dir", default="/workspace/results/offset_jlens")
 ap.add_argument("--base-ckpt", default="Qwen/Qwen3.6-27B")
 ap.add_argument("--src-layer", type=int, default=42)
@@ -46,7 +49,7 @@ inner = model.model if hasattr(model, "model") else model
 NORM, WU = inner.norm, model.lm_head.weight
 
 Jb = [torch.from_numpy(np.load(
-    f"{args.jbar_dir}/Jbar_L{args.src_layer}_to_L{args.tgt_layer}_off{d}.npy")
+    f"{args.jbar_dir}/{args.prefix}_L{args.src_layer}_to_L{args.tgt_layer}_off{d}.npy")
     ).float().to(dev) for d in range(K)]
 nrm = [float(J.norm()) for J in Jb]
 
