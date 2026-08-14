@@ -18,7 +18,11 @@ import torch
 
 CONDITIONS = ("per_offset", "pooled_identical", "slot0_only", "no_slot0",
               "shuffled_slots", "diff", "centered", "deflated", "gs",
-              "keep0_deflate_rest", "keep0_gs_rest")
+              "keep0_deflate_rest", "keep0_gs_rest",
+              # handled by the eval loop, not here: it builds per_offset slots
+              # from ANOTHER item's activation, so the readout cannot know this
+              # item's context. Any score it earns is fluency, not information.
+              "mismatched_context")
 
 
 def sign_canonical_qr(M: torch.Tensor) -> torch.Tensor:

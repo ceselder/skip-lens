@@ -57,6 +57,10 @@ ap.add_argument("--n-ao", type=int, default=4)
 ap.add_argument("--rollout-len", type=int, default=24)
 ap.add_argument("--topk", type=int, default=12)
 ap.add_argument("--max-items", type=int, default=999)
+ap.add_argument("--mismatch-offset", type=int, default=0,
+                help="for the mismatched_context control, feed the "
+                     "activation from the item this many positions "
+                     "away (0 = half the item count)")
 ap.add_argument("--out", required=True)
 args = ap.parse_args()
 dev = "cuda"
@@ -173,31 +177,48 @@ for f in sorted(glob.glob(os.path.join(args.evals_dir, "lens-eval-*.json"))):
         items.append({"name": it["name"], "prompt": it["prompt"]})
 print(f"[ms] {len(items)} items x {len(CONDS)} conditions", flush=True)
 
-out = []
+# Pass 1: every item's activation and its real continuation. Collected up front
+# so that the `mismatched_context` control can feed one item's activation while
+# the judge scores against a DIFFERENT item's context. That control is the one
+# that matters: fluent, contextually plausible readouts are exactly what a
+# decoder ignoring its input produces, and `shuffled_slots` cannot detect it
+# because permuting slot order preserves the row's information.
+H, ACT = [], []
 for j, it in enumerate(items):
     ids = tok(it["prompt"], return_tensors="pt").input_ids.to(dev)
     gids, gmask, last = grab_inputs(ids)
     pids, pmask = gen_inputs(ids)
     with model.disable_adapter():
         model(input_ids=gids, attention_mask=gmask)
-        h42 = grab[args.src_layer][0, last].float()
+        H.append(grab[args.src_layer][0, last].float().clone())
         g = model.generate(
             input_ids=pids.repeat(4, 1), attention_mask=pmask.repeat(4, 1),
             do_sample=True, temperature=0.8, top_p=0.95,
             max_new_tokens=args.rollout_len, pad_token_id=tok.eos_token_id)
-        actual = [tok.decode(x[pids.shape[1]:], skip_special_tokens=True).strip()
-                  for x in g]
+        ACT.append([tok.decode(x[pids.shape[1]:], skip_special_tokens=True).strip()
+                    for x in g])
+    if j % 25 == 0:
+        print(f"[ms] pass1 activations {j}/{len(items)}", flush=True)
+
+SHIFT = args.mismatch_offset or max(1, len(items) // 2)
+out = []
+model.set_adapter("msA")
+for j, it in enumerate(items):
+    h42 = H[j]
     Jh = (Jpool @ h42).float()
     ji, _ = lens_topk(model, Jh, k=args.topk)
     jl_top = [tok.decode([int(i)]) for i in ji]
     ctx = it["prompt"][-200:]
-    model.set_adapter("msA")
     for cond in CONDS:
+        # the mismatch control swaps only the ACTIVATION; name, context, actual
+        # continuation and the J-lens reference all stay with item j
+        src = H[(j + SHIFT) % len(items)] if cond == "mismatched_context" else h42
+        base_cond = "per_offset" if cond == "mismatched_context" else cond
         out.append({
             "name": it["name"], "fed_layer": args.src_layer,
-            "condition": cond, "jlens_top": jl_top, "actual": actual,
+            "condition": cond, "jlens_top": jl_top, "actual": ACT[j],
             "context": ctx,
-            "readout": brollout_slots(slots_for(cond, h42), args.n_ao,
+            "readout": brollout_slots(slots_for(base_cond, src), args.n_ao,
                                       args.rollout_len),
         })
     if j % 5 == 0:

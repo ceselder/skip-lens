@@ -43,10 +43,23 @@ ap.add_argument("--n-ao", type=int, default=4)
 ap.add_argument("--rollout-len", type=int, default=24)
 ap.add_argument("--topk", type=int, default=12)
 ap.add_argument("--max-items", type=int, default=999)
+ap.add_argument("--template-yaml", default=None,
+                help="read prompt_templates.actor from a dataset sidecar instead of "
+                     "using SINGLE_TEMPLATE. Required to compare arms fairly: armC "
+                     "was trained with a near-identical but not identical template "
+                     "('about to generate next' vs 'over the next several tokens'), "
+                     "and feeding an arm a template it never saw penalizes it for "
+                     "the wrong reason.")
 ap.add_argument("--out", required=True)
 args = ap.parse_args()
 dev = "cuda"
 CONDS = args.conditions.split(",")
+
+TEMPLATE = SINGLE_TEMPLATE
+if args.template_yaml:
+    import yaml
+    TEMPLATE = yaml.safe_load(open(args.template_yaml))["prompt_templates"]["actor"]
+    print(f"[ps] template from {args.template_yaml}:\n  {TEMPLATE[:120]}...", flush=True)
 
 tok = AutoTokenizer.from_pretrained(args.base_ckpt)
 base = AutoModelForCausalLM.from_pretrained(
@@ -54,7 +67,7 @@ base = AutoModelForCausalLM.from_pretrained(
     attn_implementation="sdpa").to(dev).eval()
 model = PeftModel.from_pretrained(base, args.av_ckpt, adapter_name="ps").eval()
 inj_char, inj_id = find_injection_token(tok)
-left, right = compute_canonical_neighbors(tok, SINGLE_TEMPLATE, inj_char, inj_id)
+left, right = compute_canonical_neighbors(tok, TEMPLATE, inj_char, inj_id)
 vref = [None]
 register_karvonen_hook(model, vref, inj_id, left, right)
 torch.set_grad_enabled(False)
@@ -88,7 +101,7 @@ _pc = {}
 def prompt_ids():
     if "i" not in _pc:
         s = tok.apply_chat_template(
-            [{"role": "user", "content": SINGLE_TEMPLATE.format(injection_char=inj_char)}],
+            [{"role": "user", "content": TEMPLATE.format(injection_char=inj_char)}],
             tokenize=False, add_generation_prompt=True, enable_thinking=False)
         _pc["i"] = torch.tensor([tok.encode(s, add_special_tokens=False)], device=dev)
     return _pc["i"]
