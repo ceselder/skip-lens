@@ -40,6 +40,14 @@ ap.add_argument("--tgt-layer", type=int, default=62)
 ap.add_argument("--k-slots", type=int, default=8)
 ap.add_argument("--n-rows", type=int, default=256)
 ap.add_argument("--n-gen", type=int, default=8)
+ap.add_argument("--slot-scale", choices=["per_slot", "shared", "both"],
+                default="both",
+                help="per_slot norm-matches every slot to ||h_p||, which at test "
+                     "time AMPLIFIES the deep slots ~500x (their estimates carry "
+                     "0.2-3%% of the real state's norm) — training saw real states "
+                     "of uniform norm, so matching was a no-op there. shared "
+                     "divides by the row's largest slot norm, preserving the "
+                     "relative magnitudes so faint slots stay faint.")
 ap.add_argument("--out", default="/workspace/results/multislot_eval/estimate_gap.json")
 args = ap.parse_args()
 K, dev = args.k_slots, "cuda"
@@ -53,7 +61,8 @@ inj_char, inj_id = find_injection_token(tok)
 TEMPLATE = ACTOR_TEMPLATE_MULTI.format(k=K, markers="{injection_char}" * K)
 left, right = compute_canonical_neighbors(tok, TEMPLATE, inj_char, inj_id)
 vref = [None]
-register_karvonen_hook(model, vref, inj_id, left, right)
+sref = [None, 1]
+register_karvonen_hook(model, vref, inj_id, left, right, scale_ref=sref)
 torch.set_grad_enabled(False)
 
 Jb = [torch.from_numpy(np.load(
@@ -103,10 +112,12 @@ def ce(kind, batch=8):
             msk[i, plen[i]:len(s)] = 1
         ids, att, msk = ids.to(dev), att.to(dev), msk.to(dev)
         vref[0] = torch.cat(vecs).float()
+        sref[0], sref[1] = SCALE, K
         try:
             lg = model(input_ids=ids, attention_mask=att).logits.float()
         finally:
             vref[0] = None
+            sref[0] = None
         l = torch.nn.functional.cross_entropy(
             lg[:, :-1].reshape(-1, lg.shape[-1]), ids[:, 1:].reshape(-1),
             reduction="none").view(ids[:, 1:].shape)
@@ -120,28 +131,42 @@ def gen(kind, n):
     pt = torch.tensor([P], device=dev)
     for r in rows[:n]:
         vref[0] = (slots_real(r) if kind == "real" else slots_estimate(r)).float()
+        sref[0], sref[1] = SCALE, K
         try:
             g = model.generate(input_ids=pt, attention_mask=torch.ones_like(pt),
                                max_new_tokens=K + 4, do_sample=False,
                                pad_token_id=tok.eos_token_id)
         finally:
             vref[0] = None
+            sref[0] = None
         out.append(tok.decode(g[0, pt.shape[1]:], skip_special_tokens=True).strip())
     return out
 
 
-res = {"ckpt": args.av_ckpt, "n_rows": len(rows)}
-for kind in ("real", "estimate"):
-    res[f"ce_{kind}"] = ce(kind)
-    res[f"gen_{kind}"] = gen(kind, args.n_gen)
-    print(f"\nCE({kind:8s}) = {res[f'ce_{kind}']:.4f}", flush=True)
-    for i, g in enumerate(res[f"gen_{kind}"][:5]):
-        truth = tok.decode(rows[i]["rollout_token_ids"][:K], skip_special_tokens=True)
-        print(f"   gen={g[:60]!r}\n   true={truth[:60]!r}", flush=True)
-
-res["gap_nats"] = res["ce_estimate"] - res["ce_real"]
+res = {"ckpt": args.av_ckpt, "n_rows": len(rows), "scalings": {}}
+scalings = ["per_slot", "shared"] if args.slot_scale == "both" else [args.slot_scale]
+for SCALE in scalings:
+    sub = {}
+    for kind in ("real", "estimate"):
+        sub[f"ce_{kind}"] = ce(kind)
+        sub[f"gen_{kind}"] = gen(kind, args.n_gen)
+        print(f"\n[{SCALE}] CE({kind:8s}) = {sub[f'ce_{kind}']:.4f}", flush=True)
+        for i, g in enumerate(sub[f"gen_{kind}"][:4]):
+            truth = tok.decode(rows[i]["rollout_token_ids"][:K], skip_special_tokens=True)
+            print(f"   gen={g[:58]!r}\n   true={truth[:58]!r}", flush=True)
+    sub["gap_nats"] = sub["ce_estimate"] - sub["ce_real"]
+    print(f"[{SCALE}] GAP = {sub['gap_nats']:+.3f} nats", flush=True)
+    res["scalings"][SCALE] = sub
+best = min(res["scalings"], key=lambda k: res["scalings"][k]["gap_nats"])
+res["gap_nats"] = res["scalings"][best]["gap_nats"]
+res["best_scaling"] = best
 json.dump(res, open(args.out, "w"), indent=2)
-print(f"\nGAP = {res['gap_nats']:+.3f} nats (estimate - real)", flush=True)
+print(f"\nBEST scaling: {best}  GAP = {res['gap_nats']:+.3f} nats", flush=True)
+if len(res["scalings"]) > 1:
+    d = (res["scalings"]["per_slot"]["gap_nats"]
+         - res["scalings"]["shared"]["gap_nats"])
+    print(f"shared scaling changes the gap by {-d:+.3f} nats "
+          f"(positive = shared is better)", flush=True)
 print("VERDICT:", "estimate is USABLE (gap < 1 nat)" if res["gap_nats"] < 1.0
-      else f"estimate DESTROYS the readout (+{res['gap_nats']:.2f} nats) — the "
-           "decoder learned a map its test-time input cannot drive", flush=True)
+      else f"estimate still degrades the readout (+{res['gap_nats']:.2f} nats)",
+      flush=True)
