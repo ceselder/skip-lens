@@ -10,6 +10,22 @@ import collections
 import json
 import statistics as st
 
+def is_degenerate(text):
+    """A collapsed readout, not a readout: a short unit repeated to fill the
+    span ('88888888', 'aaaa'), or <=2 distinct words over >=4 words. The frozen
+    arm scored 0.439 with 47% of its outputs like this, so any judged mean is
+    meaningless without this number beside it."""
+    t = (text or "").strip()
+    if len(t) < 4:
+        return True
+    for n in (1, 2, 3):
+        reps = len(t) // n
+        if reps >= 4 and t[: n * reps] == t[:n] * reps:
+            return True
+    w = t.split()
+    return len(w) >= 4 and len(set(w)) <= 2
+
+
 ap = argparse.ArgumentParser()
 ap.add_argument("--judged", required=True)
 ap.add_argument("--out", default="")
@@ -22,6 +38,8 @@ recs = (d if isinstance(d, list)
 print(f"n records: {len(recs)}")
 print(f"keys: {sorted(recs[0].keys())}")
 
+
+
 W_KEYS = ("agree_jlens", "jlens_agree", "workspace", "score_jlens", "jlens")
 A_KEYS = ("agree_answer", "answer_agree", "answer", "score_answer")
 
@@ -33,14 +51,21 @@ def pick(r, keys):
     return None
 
 
-by = collections.defaultdict(lambda: {"w": [], "a": []})
+by = collections.defaultdict(lambda: {"w": [], "a": [], "deg": 0, "n_out": 0,
+                                      "hist": collections.Counter()})
 for r in recs:
     c = r.get("condition", "?")
     w, a = pick(r, W_KEYS), pick(r, A_KEYS)
     if w is not None:
         by[c]["w"].append(w)
+        by[c]["hist"][int(w)] += 1
     if a is not None:
         by[c]["a"].append(a)
+    ro = r.get("readout")
+    ro = ro[0] if isinstance(ro, list) and ro else ro
+    if ro is not None:
+        by[c]["n_out"] += 1
+        by[c]["deg"] += int(is_degenerate(ro))
 
 rows = []
 for c, v in sorted(by.items(), key=lambda x: -(st.mean(x[1]["w"]) if x[1]["w"] else 0)):
@@ -49,8 +74,13 @@ for c, v in sorted(by.items(), key=lambda x: -(st.mean(x[1]["w"]) if x[1]["w"] e
     w, a = st.mean(v["w"]), (st.mean(v["a"]) if v["a"] else float("nan"))
     n = len(v["w"])
     se = (st.stdev(v["w"]) / (n ** 0.5)) if n > 1 else 0.0
-    rows.append({"condition": c, "workspace": w, "answer": a, "n": n, "se": se})
-    print(f"{c:20s} workspace={w:.3f}±{se:.3f}  answer={a:.3f}  n={n}")
+    dg = v["deg"] / v["n_out"] if v["n_out"] else float("nan")
+    rows.append({"condition": c, "workspace": w, "answer": a, "n": n, "se": se,
+                 "degenerate_frac": dg, "score_hist": dict(v["hist"])})
+    flag = "  <-- MOSTLY DEGENERATE" if dg > 0.25 else ""
+    print(f"{c:20s} workspace={w:.3f}±{se:.3f}  answer={a:.3f}  n={n}  "
+          f"degenerate={100*dg:.0f}%  hist(0/1/2)="
+          f"{v['hist'][0]}/{v['hist'][1]}/{v['hist'][2]}{flag}")
 
 ex = []
 for r in recs:

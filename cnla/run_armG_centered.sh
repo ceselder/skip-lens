@@ -34,7 +34,7 @@ for f in hbar_L42.npy hbar_L62.npy whiten_L42.npy whiten_L62.npy; do
 done
 
 if [ ! -f "$T" ]; then
-  G=$(/workspace/gpu_wait.sh 20000)
+  G=${FORCE_GPU:-$(/workspace/gpu_wait.sh 20000)}
   echo "[armG] building centered train data on gpu $G"
   CUDA_VISIBLE_DEVICES=$G python pretrain/build_twoJ_train.py \
     --raw-glob "/workspace/data/spans_raw/shard_[0-3].parquet" \
@@ -44,7 +44,7 @@ if [ ! -f "$T" ]; then
 fi
 
 N=$(python -c "import pyarrow.parquet as pq; print(max(200, pq.ParquetFile('$T').metadata.num_rows // 64))")
-G=$(/workspace/gpu_wait.sh 70000)
+G=${FORCE_GPU:-$(/workspace/gpu_wait.sh 70000)}
 echo "[armG] training on gpu $G for $N steps"
 CUDA_VISIBLE_DEVICES=$G python -m nla.train_sft --mode av \
   --base-ckpt Qwen/Qwen3.6-27B \
