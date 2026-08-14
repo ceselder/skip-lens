@@ -434,9 +434,54 @@ class AoReq(BaseModel):
 app = FastAPI()
 
 
+EVALS_DIR = os.environ.get(
+    "EVALS_DIR", "/workspace/skip-lens/evals/datasets/official/evaluations")
+PRESETS_PATH = os.environ.get("PRESETS", "")
+
+
+def _eval_behaviors():
+    """The 551 official eval items, grouped by file, as browsable behaviours.
+
+    chat=False because these are raw completion prompts — the judged evals feed
+    them untemplated, and wrapping them in a chat turn would read out a different
+    activation than the measured numbers correspond to."""
+    out = {}
+    for f in sorted(glob.glob(os.path.join(EVALS_DIR, "lens-eval-*.json"))):
+        nm = os.path.basename(f)[len("lens-eval-"):-len(".json")]
+        try:
+            items = json.load(open(f)).get("items", [])
+        except Exception as e:
+            print(f"[ms] eval file {f} unreadable: {e!r}", flush=True)
+            continue
+        out[f"eval:{nm}"] = [
+            {"user": it["prompt"], "chat": False,
+             "explanation": f"official eval item · {nm} · {it.get('name', '')}"}
+            for it in items if it.get("prompt")]
+    return out
+
+
+# The weirdchat preset file is passed through VERBATIM and its contents are never
+# inspected here — the user asked that the agentic-misalignment scenarios not be
+# read. Point PRESETS at the json (it lives on the SLURM box by default, so copy
+# it over and set the env var) and its behaviours appear alongside the evals.
+BEHAVIORS = _eval_behaviors()
+if PRESETS_PATH and os.path.exists(PRESETS_PATH):
+    try:
+        _pj = json.load(open(PRESETS_PATH))
+        BEHAVIORS = {**BEHAVIORS, **_pj}
+        print(f"[ms] presets merged from {PRESETS_PATH}: "
+              f"{len(_pj)} behaviour group(s), contents not inspected", flush=True)
+    except Exception as e:
+        print(f"[ms] presets at {PRESETS_PATH} unreadable: {e!r}", flush=True)
+elif PRESETS_PATH:
+    print(f"[ms] PRESETS={PRESETS_PATH} does not exist — evals only", flush=True)
+print(f"[ms] behaviours: " + ", ".join(
+    f"{k} ({len(v)})" for k, v in BEHAVIORS.items()), flush=True)
+
+
 @app.get("/api/presets")
 def presets(_=Depends(require_auth)):
-    return JSONResponse({"behaviors": {}, "layers": JLAYERS,
+    return JSONResponse({"behaviors": BEHAVIORS, "layers": JLAYERS,
                          "target": TARGET_L, "heads": []})
 
 

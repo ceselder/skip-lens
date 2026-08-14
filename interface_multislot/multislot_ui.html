@@ -183,7 +183,8 @@ async function loadT(t,el){
       ${esc(t.explanation)} ${t.url?`· <a href="${t.url}" target="_blank">weirdchat</a>`:''}</div>`
    : '';
  try{
-   RUN=await api('/api/run',{user:t.user,assistant:t.assistant,system:t.system||''});
+   RUN=await api('/api/run',{user:t.user,assistant:t.assistant,system:t.system||'',
+     chat:t.chat===false?false:true});
    drawConv(); $('#status').innerHTML=
      `<small>${RUN.n_total} tokens · ${RUN.n_prompt} prompt / ${RUN.n_total-RUN.n_prompt} reply</small>`;
  }catch(e){$('#status').innerHTML='<small style="color:#b00">'+e.message+'</small>';}
