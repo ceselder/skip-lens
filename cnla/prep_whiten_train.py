@@ -12,7 +12,9 @@ SRC = "/workspace/cnla/skip-lens/data/fl_big/av_L62_150k.parquet"
 OUT = "/workspace/cnla/skip-lens/data/meansub"
 N_STATS = 20000
 N_TRAIN = 500
-RIDGE = 0.1   # lambda as a fraction of the mean eigenvalue: W = (Sigma + lambda*I)^(-1/2)
+ALPHA = 0.15  # shrinkage: W = ((1-a)Sigma + a*mean_eig*I)^(-1/2); matches whiten_test_stats.py.
+# Injection is norm-matched (direction only), so the global scale is irrelevant and this is
+# directionally identical to ridge W=(Sigma+lambda*I)^(-1/2) with lambda ~ 0.18*mean_eig.
 
 pf = pq.ParquetFile(SRC)
 parts, have = [], 0

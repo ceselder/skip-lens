@@ -11,7 +11,12 @@ present. Device-aligned so it also works under device_map="auto".
 from nla.injection import karvonen_inject_in_residual
 
 
-def register_karvonen_hook(model, vectors_ref, inj_id, left_id, right_id, layer_idx=1):
+def register_karvonen_hook(model, vectors_ref, inj_id, left_id, right_id, layer_idx=1,
+                           scale_ref=None):
+    """scale_ref: optional [slot_scale:str, n_slots:int] holder. Default
+    per-slot norm-matching; set to ["shared", K] to preserve RELATIVE magnitude
+    across a row's K slots (needed when the informative axis is magnitude, e.g.
+    suffix-pooled Jacobian slots whose directions are 0.99 collinear)."""
     state = {"input_ids": None}
 
     def embed_hook(module, args, kwargs, output):
@@ -39,8 +44,12 @@ def register_karvonen_hook(model, vectors_ref, inj_id, left_id, right_id, layer_
         # contains markers (decode steps are caught by the seq_len<2 guard above),
         # so zero markers = template drift — let karvonen_inject_in_residual's
         # count-mismatch check fail LOUD instead of silently skipping injection.
+        _ss, _ns = "per_slot", 1
+        if scale_ref is not None and scale_ref[0]:
+            _ss, _ns = scale_ref[0], scale_ref[1]
         injected = karvonen_inject_in_residual(
             ids, resid, v.to(resid.device), inj_id, left_id, right_id,
+            slot_scale=_ss, n_slots=_ns,
         )
         if rest is None:
             return injected

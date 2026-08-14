@@ -44,6 +44,10 @@ def main():
     ap.add_argument("--raw-glob", required=True)
     ap.add_argument("--jbar-dir", required=True)
     ap.add_argument("--src-layer", type=int, default=62)
+    ap.add_argument("--src-col", default=None,
+                    help="activation column to transport (default act_L{src_layer}). "
+                         "Arm F (the matched control) uses act_L42 with src-layer 42, "
+                         "i.e. trains on EXACTLY the vectors the eval feeds.")
     ap.add_argument("--tgt-layer", type=int, default=63)
     ap.add_argument("--k-slots", type=int, default=8)
     ap.add_argument("--out-train", required=True)
@@ -54,10 +58,12 @@ def main():
     K = args.k_slots
     dev = "cuda" if torch.cuda.is_available() else "cpu"
 
+    src_col = args.src_col or f"act_L{args.src_layer}"
     tok = AutoTokenizer.from_pretrained(args.base_model)
     Jb = [torch.from_numpy(np.load(
         f"{args.jbar_dir}/Jbar_L{args.src_layer}_to_L{args.tgt_layer}_off{d}.npy")
         ).float().to(dev) for d in range(K)]
+    print(f"source column: {src_col}", flush=True)
     print(f"loaded {K} Jbar_L{args.src_layer}->L{args.tgt_layer} matrices "
           f"(|J| d0={float(Jb[0].norm()):.2f} d7={float(Jb[-1].norm()):.2f})", flush=True)
 
@@ -77,7 +83,7 @@ def main():
         pf = pq.ParquetFile(f)
         for rg in range(pf.num_row_groups):
             rows = pf.read_row_group(rg, columns=[
-                "act_L62", "rollout_token_ids", "ctx_text", "doc_id"]).to_pylist()
+                src_col, "rollout_token_ids", "ctx_text", "doc_id"]).to_pylist()
             keep, h62 = [], []
             for r in rows:
                 roll = r["rollout_token_ids"][0] if r["rollout_token_ids"] else []
@@ -92,7 +98,7 @@ def main():
                     n["roundtrip"] += 1
                     continue
                 keep.append((r, resp))
-                h62.append(r["act_L62"])
+                h62.append(r[src_col])
             if not keep:
                 continue
             H = torch.tensor(np.array(h62, dtype=np.float32), device=dev)   # [B, d]

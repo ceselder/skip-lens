@@ -52,10 +52,24 @@ def require_auth(c: HTTPBasicCredentials = Depends(_sec)):
 
 BASE = os.environ.get("BASE_CKPT", "Qwen/Qwen3.6-27B")
 JBAR_DIR = os.environ.get("JBAR_DIR", "/workspace/results/offset_jlens")
-ARMA_CKPT = os.environ.get("ARMA_CKPT",
-    "/workspace/skip-lens/ckpts/multislot_armA_k8/iter_0003875")
-ARMC_CKPT = os.environ.get("ARMC_CKPT",
-    "/workspace/skip-lens/ckpts/multislot_armC_L62/iter_0003876")
+CKPT_ROOT = os.environ.get("CKPT_ROOT", "/workspace/skip-lens/ckpts")
+
+
+def _latest(d):
+    """newest iter_* under a checkpoint dir, or None if the arm has not run"""
+    if not os.path.isdir(d):
+        return None
+    its = sorted(x for x in os.listdir(d) if x.startswith("iter_"))
+    return os.path.join(d, its[-1]) if its else None
+
+
+# category -> (adapter name, checkpoint dir, "multi" = K slots | "single" = 1 slot)
+ARM_SPECS = [
+    ("armA-K8", "armA", f"{CKPT_ROOT}/multislot_armA_k8", "multi"),
+    ("armFrozen-K8", "armFrozen", f"{CKPT_ROOT}/multislot_armA_frozen_k8", "multi"),
+    ("armE-K8", "armE", f"{CKPT_ROOT}/multislot_armE_twoJ", "multi"),
+    ("armC-1slot", "armC", f"{CKPT_ROOT}/multislot_armC_L62", "single"),
+]
 TARGET_L = 62
 SRC_L = 42
 K = 8
@@ -86,6 +100,21 @@ for _d in range(K):
         MEANDIR[_d] = torch.from_numpy(np.load(_p)).float().to(dev)
 print(f"[ms] centering assets: hbar={'yes' if HBAR is not None else 'NO'} "
       f"meandirs={len(MEANDIR)}", flush=True)
+# Neel's suffix-pooled family: S^(d) = sum_{k>=d} J^(k), so S^0 IS the paper's
+# J-lens and each slot keeps the average-over-everything-after property. Its
+# slots are ~0.99 collinear in DIRECTION but ~9x apart in NORM, so it is served
+# both with per-slot norm-matching (magnitude erased) and with shared scaling
+# (magnitude preserved) to make the difference visible.
+SUFFIX_DIR = os.path.join(JBAR_DIR, "suffix")
+JSUF = None
+if os.path.isdir(SUFFIX_DIR):
+    try:
+        JSUF = [torch.from_numpy(np.load(os.path.join(
+            SUFFIX_DIR, f"Jbar_L{SRC_L}_to_L{TARGET_L}_off{d}.npy"))).to(dev).float()
+            for d in range(K)]
+        print(f"[ms] suffix-pooled family loaded from {SUFFIX_DIR}", flush=True)
+    except Exception as e:
+        print(f"[ms] suffix family unavailable: {e!r}", flush=True)
 JLAYERS = [SRC_L]
 CAP_LAYERS = [SRC_L, TARGET_L]
 print(f"[ms] {K} per-offset Jbar + pooled loaded", flush=True)
@@ -103,13 +132,26 @@ SINGLE_TEMPLATE = ("You are shown an internal activation vector captured from a 
     "<concept>{injection_char}</concept>")
 MULTI_TEMPLATE = ACTOR_TEMPLATE_MULTI.format(k=K, markers="{injection_char}" * K)
 
-PEFT = PeftModel.from_pretrained(model, ARMA_CKPT, adapter_name="armA").eval()
-PEFT.load_adapter(ARMC_CKPT, adapter_name="armC")
+ARMS = {}          # category -> (adapter_name, kind)
+PEFT = None
+for cat, aname, root, kind in ARM_SPECS:
+    ck = _latest(root)
+    if ck is None:
+        print(f"[ms] skip {cat}: no checkpoint under {root}", flush=True)
+        continue
+    if PEFT is None:
+        PEFT = PeftModel.from_pretrained(model, ck, adapter_name=aname).eval()
+    else:
+        PEFT.load_adapter(ck, adapter_name=aname)
+    ARMS[cat] = (aname, kind)
+    print(f"[ms] loaded {cat} <- {ck}", flush=True)
+assert PEFT is not None, "no arm checkpoints found"
 inj_char, inj_id = find_injection_token(tok)
 # canonical flanks are identical for a run of 1 and a run of K (same tag tokens)
 _left, _right = compute_canonical_neighbors(tok, MULTI_TEMPLATE, inj_char, inj_id)
 _vref = [None]
-register_karvonen_hook(PEFT, _vref, inj_id, _left, _right)
+_sref = [None, 1]        # [slot_scale, n_slots] — see nla/utils/hooks.py
+register_karvonen_hook(PEFT, _vref, inj_id, _left, _right, scale_ref=_sref)
 
 
 def _pt(template):
@@ -132,24 +174,37 @@ COND_ORDER = ["diff", "keep0_deflate_rest", "keep0_gs_rest", "per_offset",
               "slot0_only", "shuffled_slots", "no_slot0", "gs",
               "pooled_identical", "deflated", "centered"]
 COND_ORDER = [c for c in COND_ORDER if c in CONDITIONS]
-REGISTRY = {"armA-K8": {c: c for c in COND_ORDER},
-            "armC-1slot": {"pooledJ": "pooledJ"}}
+if JSUF is not None:
+    # served through the same slot builders, but on the suffix family
+    COND_ORDER = ["suffix_shared", "suffix_perslot"] + COND_ORDER
+REGISTRY = {cat: ({c: c for c in COND_ORDER} if kind == "multi"
+                  else {"pooledJ": "pooledJ"})
+            for cat, (_a, kind) in ARMS.items()}
 
 RUNS, LOCK = {}, threading.Lock()
 
 
 def slots_for(cond, h42):
     """Delegates to evals/slot_builders.py — the same code path the judged
-    evals use, so the playground can never drift from the measured numbers."""
-    return build_slots(cond, h42, JBAR, JPOOL, k=K, hbar=HBAR, meandirs=MEANDIR)
+    evals use, so the playground can never drift from the measured numbers.
+    Returns (slots, slot_scale)."""
+    if cond in ("suffix_shared", "suffix_perslot"):
+        if JSUF is None:
+            raise HTTPException(404, "suffix-pooled family not built")
+        slots = build_slots("per_offset", h42, JSUF, JPOOL, k=K)
+        return slots, ("shared" if cond == "suffix_shared" else "per_slot")
+    return build_slots(cond, h42, JBAR, JPOOL, k=K, hbar=HBAR,
+                       meandirs=MEANDIR), "per_slot"
 
 
 @torch.no_grad()
-def _roll(vectors, adapter, prompt_ids, n=1, max_new=14, temp=0.7):
-    """vectors: [S, d] (S = K for armA, 1 for armC), tiled per batch row."""
+def _roll(vectors, adapter, prompt_ids, n=1, max_new=14, temp=0.7,
+          slot_scale="per_slot"):
+    """vectors: [S, d] (S = K for the 8-slot arms, 1 for arm C), tiled per row."""
     B = max(1, n)
     ids = prompt_ids.repeat(B, 1)
     PEFT.set_adapter(adapter)
+    _sref[0], _sref[1] = slot_scale, vectors.shape[0]
     _vref[0] = vectors.float().repeat(B, 1).contiguous()
     try:
         g = PEFT.generate(input_ids=ids, attention_mask=torch.ones_like(ids),
@@ -158,6 +213,7 @@ def _roll(vectors, adapter, prompt_ids, n=1, max_new=14, temp=0.7):
                           top_p=0.95, pad_token_id=tok.eos_token_id)
     finally:
         _vref[0] = None
+        _sref[0] = None
     return [tok.decode(x[prompt_ids.shape[1]:], skip_special_tokens=True).strip()
             for x in g]
 
@@ -349,16 +405,19 @@ def api_ao(r: AoReq, _=Depends(require_auth)):
             cell = {"cat": s.cat, "ckpt": s.ckpt}
             try:
                 smx = max(1, min(int(s.max_new), 64)) if s.max_new else mx
-                if s.cat == "armA-K8":
+                if s.cat not in ARMS:
+                    raise HTTPException(404, f"unknown category {s.cat!r}")
+                aname, kind = ARMS[s.cat]
+                if kind == "multi":
                     if s.ckpt not in COND_ORDER:
                         raise HTTPException(404, f"unknown condition {s.ckpt!r}")
-                    cell["readout"] = _roll(slots_for(s.ckpt, h42), "armA",
-                                            _PT_MULTI, n, smx)
-                elif s.cat == "armC-1slot":
-                    cell["readout"] = _roll((JPOOL @ h42).unsqueeze(0), "armC",
-                                            _PT_SINGLE, n, smx)
+                    slots, sscale = slots_for(s.ckpt, h42)
+                    cell["readout"] = _roll(slots, aname, _PT_MULTI, n, smx,
+                                            slot_scale=sscale)
+                    cell["slot_scale"] = sscale
                 else:
-                    raise HTTPException(404, f"unknown category {s.cat!r}")
+                    cell["readout"] = _roll((JPOOL @ h42).unsqueeze(0), aname,
+                                            _PT_SINGLE, n, smx)
                 cell["max_new"] = smx
             except HTTPException as e:
                 cell["readout"], cell["error"] = [], str(e.detail)
@@ -378,7 +437,9 @@ UI_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 if __name__ == "__main__":
     _z = torch.zeros(W_U.shape[1], device=dev)
-    for _ad, _pt_, _S in [("armA", _PT_MULTI, K), ("armC", _PT_SINGLE, 1)]:
+    _warm = [(a, _PT_MULTI if k == "multi" else _PT_SINGLE, K if k == "multi" else 1)
+             for _c, (a, k) in ARMS.items()]
+    for _ad, _pt_, _S in _warm:
         try:
             _roll(torch.zeros(_S, W_U.shape[1], device=dev), _ad, _pt_, n=1, max_new=14)
             print(f"[ms] warmup: {_ad} compiled", flush=True)
