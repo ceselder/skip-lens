@@ -161,10 +161,29 @@ def karvonen_inject_in_residual(
     inj_id: int,
     left_id: int,
     right_id: int,
+    slot_scale: str = "per_slot",
+    n_slots: int = 1,
 ) -> torch.Tensor:
     """ADD-norm-matched injection per Karvonen et al. 2025 (Activation Oracles, eq. 1).
 
     For each marker position p: h'_p = h_p + ||h_p|| * v / ||v||.
+
+    slot_scale controls what the vectors are divided by, which decides whether
+    RELATIVE MAGNITUDE between a row's slots survives injection:
+
+      "per_slot" (default, the original behaviour) divides each vector by its
+          own norm, so every slot lands at ||h_p|| and only slot DIRECTIONS
+          reach the model. Correct when the slots differ mainly in direction.
+
+      "shared" divides every slot of a row by the LARGEST norm among that
+          row's slots, so the biggest slot lands at ||h_p|| and the others land
+          proportionally smaller. Necessary when the informative axis IS the
+          magnitude — e.g. suffix-pooled Jacobian slots, whose directions are
+          0.99+ collinear but whose norms span ~9x. With "per_slot" such slots
+          collapse into near-identical injected vectors.
+
+    n_slots is how many consecutive vectors belong to one row (only used by
+    "shared", to group them).
 
     Caller responsibility: register this hook on the OUTPUT of the second
     transformer layer (i.e. `model.model.layers[1].register_forward_hook(...)`),
@@ -178,8 +197,17 @@ def karvonen_inject_in_residual(
     assert vectors.ndim == 2 and vectors.shape[1] == resid.shape[-1], (
         f"vectors must be [N, d_model], got {tuple(vectors.shape)}, d_model={resid.shape[-1]}"
     )
+    assert slot_scale in ("per_slot", "shared"), f"bad slot_scale {slot_scale!r}"
     out = resid.clone()
     vectors = vectors.to(out.device, out.dtype)
+    if slot_scale == "shared":
+        assert vectors.shape[0] % n_slots == 0, (
+            f"{vectors.shape[0]} vectors is not a multiple of n_slots={n_slots}")
+        row_max = (vectors.view(-1, n_slots, vectors.shape[-1])
+                   .norm(dim=-1).amax(dim=-1))            # [n_rows]
+        denom = row_max.repeat_interleave(n_slots)        # [N], one per vector
+    else:
+        denom = vectors.norm(dim=-1)                      # [N], each its own
     vec_idx = 0
     for b in range(input_ids.shape[0]):
         for p in _valid_marker_positions(input_ids[b], inj_id, left_id, right_id):
@@ -194,7 +222,7 @@ def karvonen_inject_in_residual(
             # same memory the autograd graph references → "modified by inplace
             # op" RuntimeError at backward time.
             h_p = out[b, p].clone()
-            v_unit = vectors[vec_idx] / (vectors[vec_idx].norm() + 1e-9)
+            v_unit = vectors[vec_idx] / (denom[vec_idx] + 1e-9)
             out[b, p] = h_p + h_p.norm() * v_unit
             vec_idx += 1
     expected = vectors.shape[0]
