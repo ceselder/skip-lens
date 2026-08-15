@@ -72,6 +72,7 @@ for d in range(L):
     M = torch.from_numpy(np.load(
         f"{args.jbar_dir}/Jbar_L42_to_L62_off{d}.npy")).float().to(dev)
     JP = M if JP is None else JP + M
+HBAR = torch.from_numpy(np.load(f"{args.jbar_dir}/hbar_L42.npy")).float().to(dev)
 print(f"global Jbar pooled over d<{L}: |JP|={float(JP.norm()):.2f}", flush=True)
 
 tpl = [json.loads(x) for x in open(args.templates)][: args.max_spans]
@@ -80,7 +81,8 @@ print(f"{len(tpl)} spans with templates", flush=True)
 
 # real held-out rows: give us h42 and the stored local transport for the SAME span
 t = pq.read_table(args.shards, columns=["rollout_token_ids", "activation_vector",
-                                        "transported_vectors", "h42_recompute_cosine"])
+                                        "transported_vectors", "h42_recompute_cosine",
+                                        "ctx_text"])
 real = {}
 for r in t.slice(0, 60000).to_pylist():
     if r["h42_recompute_cosine"] < 0.99 or not r["rollout_token_ids"]:
@@ -90,9 +92,50 @@ for r in t.slice(0, 60000).to_pylist():
         real[k] = r
 print(f"{len(real)} spans matched to a real held-out row", flush=True)
 
+def transports_for(ctx_list, span_ids, tangent, n_max=16):
+    """mean over contexts of J_local(ctx) @ tangent, pooled over d < L.
+
+    Every context gets the SAME span appended, so the only thing that differs
+    between the span-matched and random-context sets is whether the context makes
+    the span natural — which is what isolates span-conditioning from the mere
+    sample-size effect of averaging over many contexts.
+    """
+    seqs, plist = [], []
+    for c in ctx_list[:n_max]:
+        cid = tok.encode(c, add_special_tokens=False)
+        if len(cid) < 8:
+            continue
+        cid = cid[-480:]
+        seqs.append(cid + span_ids + [PAD] * N_OFFSETS)
+        plist.append(len(cid) - 1)
+    if len(seqs) < 4:
+        return None, None, None
+    T = max(len(x) for x in seqs)
+    ids = torch.full((len(seqs), T), PAD, dtype=torch.long)
+    mask = torch.zeros_like(ids)
+    for i, x in enumerate(seqs):
+        ids[i, :len(x)] = torch.tensor(x)
+        mask[i, :len(x)] = 1
+    ids, mask = ids.to(dev), mask.to(dev)
+    pp = torch.tensor(plist, device=dev)
+    with torch.no_grad():
+        lg = model(input_ids=ids, attention_mask=mask).logits.float().log_softmax(-1)
+    lps = [sum(float(lg[i, p + k, span_ids[k]]) for k in range(L))
+           for i, p in enumerate(plist)]
+    tr = dvjp_transports(model, ids, mask, pp,
+                         tangent.unsqueeze(0).expand(len(seqs), -1))[0]
+    return tr[:, :L].float().sum(1), lps, (ids, mask, pp)
+
+
 ALT_H = [torch.tensor(np.array(real[k]["activation_vector"], dtype=np.float32),
                       device=dev) for k in list(real)[:5]]
 rows_out = []
+VEC_GLOBAL, VEC_SPANAVG, VEC_LOCAL, VEC_RANDAVG = [], [], [], []
+# (2) random-context control: contexts drawn from OTHER spans. If averaging over
+# any 16 contexts lands as close to the global operator as span-matched ones do,
+# the alignment gain is a sample-size effect and span-conditioning buys only label
+# validity, not proximity.
+ALL_CTX = [(k, c) for k, t in by_span.items() for c in t["contexts"]]
 for si, (key, t_ent) in enumerate(by_span.items()):
     if key not in real:
         continue
@@ -103,69 +146,62 @@ for si, (key, t_ent) in enumerate(by_span.items()):
         .astype(np.float32), device=dev).sum(0)
     span_ids = list(key)
 
-    seqs, plist, lps = [], [], []
-    for c in t_ent["contexts"]:
-        cid = tok.encode(c, add_special_tokens=False)
-        if len(cid) < 8:
-            continue
-        cid = cid[-480:]
-        # dvjp_transports gathers h62 at p+0 .. p+N_OFFSETS-1 unconditionally, so
-        # the sequence must extend N_OFFSETS past p even though only d < L is read.
-        # The original collection appended a 16-token rollout and never hit this;
-        # a 4-token span alone indexes out of bounds. Filler is attended (mask=1)
-        # so no softmax row is fully masked, and its transports are discarded.
-        seqs.append(cid + span_ids + [PAD] * N_OFFSETS)
-        plist.append(len(cid) - 1)
-    if len(seqs) < 4:
+    # (a) span-matched contexts
+    per_ctx, lps, batch = transports_for(t_ent["contexts"], span_ids, h)
+    if per_ctx is None:
         continue
-    T = max(len(s) for s in seqs)
-    ids = torch.full((len(seqs), T), PAD, dtype=torch.long)
-    mask = torch.zeros_like(ids)
-    for i, s in enumerate(seqs):
-        ids[i, :len(s)] = torch.tensor(s)
-        mask[i, :len(s)] = 1
-    ids, mask = ids.to(dev), mask.to(dev)
-    p_pos = torch.tensor(plist, device=dev)
 
-    # P(S | generated context): does the model actually want to say S here?
+    # (b) RANDOM-context control: foreign contexts, same span appended. If this
+    # lands as close to the global operator as (a) does, the alignment gain is a
+    # sample-size effect and span-conditioning buys only label validity.
+    foreign = [c for k, c in ALL_CTX if k != key]
+    rnd = [foreign[(si * 7 + i * 13) % len(foreign)] for i in range(len(t_ent["contexts"]))]
+    per_rnd, lps_rnd, _ = transports_for(rnd, span_ids, h)
+
+    # (c) the REAL context the span actually came from, so -18 is interpretable:
+    # the rollout was sampled at temperature 1.0 / top_p 0.95, so P(S) is not high
+    # even where the model genuinely produced S. ctx_text is the last ~48 tokens.
     with torch.no_grad():
-        lg = model(input_ids=ids, attention_mask=mask).logits.float().log_softmax(-1)
-    for i, p in enumerate(plist):
-        lp = sum(float(lg[i, p + k, span_ids[k]]) for k in range(L))
-        lps.append(lp)
+        rid = tok.encode(r["ctx_text"], add_special_tokens=False)[-480:]
+        rseq = torch.tensor([rid + span_ids], device=dev)
+        rlg = model(input_ids=rseq,
+                    attention_mask=torch.ones_like(rseq)).logits.float().log_softmax(-1)
+        lp_real = sum(float(rlg[0, len(rid) - 1 + k, span_ids[k]]) for k in range(L))
 
-    tr = dvjp_transports(model, ids, mask, p_pos,
-                        h.unsqueeze(0).expand(len(seqs), -1))[0]     # [B,16,d]
-    per_ctx = tr[:, :L].float().sum(1)                               # pool d<L
+    # h-sensitivity, on CENTERED activations. Raw L42 activations are all >0.98
+    # cosine to each other, so any linear operator maps them to near-parallel
+    # outputs and the raw version of this test reads 1.0000 regardless of what the
+    # operator does. Removing the corpus mean leaves the part that actually carries
+    # context, which is what the decoder would have to rely on.
+    h_alt = ALT_H[(si + 1) % len(ALT_H)]
+    per_c, _, _ = transports_for(t_ent["contexts"], span_ids, h - HBAR)
+    per_alt, _, _ = transports_for(t_ent["contexts"], span_ids, h_alt - HBAR)
+    ent_alt = (float(cos(per_c.mean(0), per_alt.mean(0), dim=-1))
+               if (per_alt is not None and per_c is not None) else float("nan"))
 
-    # Is J_S h a function of BOTH the span and the activation, or effectively a
-    # per-span constant? If applying the same span-averaged operator to a foreign
-    # activation gives nearly the same vector, then the training set is a codebook
-    # of N discrete span vectors and the decoder becomes a lookup — which works for
-    # enumerated spans (this is what the paper's template lens accepts) but cannot
-    # interpolate to unseen ones. Low cosine here means h genuinely contributes.
-    h_alt = ALT_H[si % len(ALT_H)]
-    if float(cos(h_alt, h, dim=-1)) < 0.98:
-        tr2 = dvjp_transports(model, ids, mask, p_pos,
-                              h_alt.unsqueeze(0).expand(len(seqs), -1))[0]
-        ent_alt = float(cos(per_ctx.mean(0), tr2[:, :L].float().sum(1).mean(0), dim=-1))
-    else:
-        ent_alt = float("nan")
     keep = [i for i, lp in enumerate(lps) if lp >= args.min_logprob]
     ent = {
-        "span": t_ent["span_text"], "n_ctx": len(seqs), "n_kept": len(keep),
+        "span": t_ent["span_text"], "n_ctx": int(per_ctx.shape[0]), "n_kept": len(keep),
         "logprob_mean": float(np.mean(lps)), "logprob_max": float(np.max(lps)),
         "cos_global_vs_spanavg": float(cos(JP @ h, per_ctx.mean(0), dim=-1)),
         "cos_global_vs_local": float(cos(JP @ h, v_local, dim=-1)),
         "cos_spanavg_vs_local": float(cos(per_ctx.mean(0), v_local, dim=-1)),
         "cos_spanavg_own_h_vs_foreign_h": ent_alt,
+        "logprob_real_ctx": lp_real,
+        "cos_global_vs_randavg": (float(cos(JP @ h, per_rnd.mean(0), dim=-1))
+                                  if per_rnd is not None else float("nan")),
     }
     if keep:
         ent["cos_global_vs_spanavg_filtered"] = float(
             cos(JP @ h, per_ctx[keep].mean(0), dim=-1))
+    if per_rnd is not None:
+        VEC_RANDAVG.append(per_rnd.mean(0))
+    VEC_GLOBAL.append(JP @ h)
+    VEC_SPANAVG.append(per_ctx.mean(0))
+    VEC_LOCAL.append(v_local)
     rows_out.append(ent)
     if si % 20 == 0:
-        print(f"  [{si}] {t_ent['span_text']!r} kept={len(keep)}/{len(seqs)} "
+        print(f"  [{si}] {t_ent['span_text']!r} kept={len(keep)}/{per_ctx.shape[0]} "
               f"cos(global,spanavg)={ent['cos_global_vs_spanavg']:+.3f} "
               f"cos(global,local)={ent['cos_global_vs_local']:+.3f}", flush=True)
 
@@ -181,6 +217,8 @@ res = {"n_spans": len(rows_out), "span_len": L, "per_span": rows_out,
        "mean_cos_spanavg_vs_local": mean("cos_spanavg_vs_local"),
        "mean_logprob": mean("logprob_mean"),
        "mean_h_sensitivity": mean("cos_spanavg_own_h_vs_foreign_h"),
+       "mean_cos_global_vs_randavg": mean("cos_global_vs_randavg"),
+       "mean_logprob_real_ctx": mean("logprob_real_ctx"),
        "mean_kept": mean("n_kept")}
 print(f"\n{len(rows_out)} spans measured")
 print(f"  mean total logprob of S under generated contexts   {res['mean_logprob']:+.2f}")
@@ -191,6 +229,27 @@ print(f"  ... restricted to filtered contexts               "
       f"{res['mean_cos_global_vs_spanavg_filtered']:+.4f}")
 print(f"  cos(global Jbar h, LOCAL Jacobian h)              "
       f"{res['mean_cos_global_vs_local']:+.4f}   <- arm I's mismatch")
+G = torch.stack(VEC_GLOBAL); S_ = torch.stack(VEC_SPANAVG); Lo = torch.stack(VEC_LOCAL)
+res["centered_cos_global_vs_spanavg"] = float(
+    cos(G - G.mean(0), S_ - S_.mean(0), dim=-1).mean())
+res["centered_cos_global_vs_local"] = float(
+    cos(G - G.mean(0), Lo - Lo.mean(0), dim=-1).mean())
+print(f"\n  CENTERED cos(global, span-averaged)               "
+      f"{res['centered_cos_global_vs_spanavg']:+.4f}   <- honest")
+print(f"  CENTERED cos(global, local)                       "
+      f"{res['centered_cos_global_vs_local']:+.4f}")
+print("   raw cosines are inflated: any two L42 activations are >0.98 cosine, so"
+      "\n   the shared mean dominates unless it is removed.")
+print(f"\n  cos(global, RANDOM-context average)              "
+      f"{res['mean_cos_global_vs_randavg']:+.4f}   <- sample-size control")
+print(f"   if this matches the span-averaged number, the gain is sample size and"
+      f"\n   span-conditioning buys label validity rather than proximity.")
+print(f"\n  logprob of S under Claude's contexts              {res['mean_logprob']:+.2f}")
+print(f"  logprob of S under the REAL context               "
+      f"{res['mean_logprob_real_ctx']:+.2f}   <- the reference")
+print(f"   the rollout was sampled at temperature 1.0 / top_p 0.95, so P(S) is not"
+      f"\n   high even where the model genuinely produced S. Claude's contexts are only"
+      f"\n   'weak' relative to this number, not in absolute terms.")
 hs = res["mean_h_sensitivity"]
 print(f"\n  cos(J_S h_own, J_S h_foreign)                     {hs:+.4f}")
 print("   high (>0.95) => J_S h is effectively a per-span CONSTANT, so the training"

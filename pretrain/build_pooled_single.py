@@ -114,15 +114,21 @@ def main():
                     n["cos"] += 1
                     continue
                 roll = r["rollout_token_ids"]
-                if len(roll) < args.span_len:
+                # The response must be the tokens the POOLED OFFSETS describe:
+                # offset d is the state h62[p+d], which predicts roll[d]. Pooling
+                # [lo, hi) and targeting roll[0:8] - what the original arm K did -
+                # gives a vector that says nothing about the first token it must emit
+                # while carrying content about tokens it is never asked for.
+                lo, hi = args.deep_from, args.pool_upto
+                if len(roll) < hi:
                     n["short"] += 1
                     continue
-                resp = tok.decode(roll[: args.span_len], skip_special_tokens=True)
+                resp = tok.decode(roll[lo:hi], skip_special_tokens=True)
                 if len(resp.strip()) < 2:
                     n["short"] += 1
                     continue
                 if tok.encode(resp, add_special_tokens=False) != [
-                        int(x) for x in roll[: args.span_len]]:
+                        int(x) for x in roll[lo:hi]]:
                     n["roundtrip"] += 1
                     continue
                 tv = np.frombuffer(r["transported_vectors"], dtype=np.float16)
@@ -133,7 +139,7 @@ def main():
                     "prompt": prompt_msgs, "response": resp,
                     "activation_vector": v.tolist(),
                     "ctx_text": r["ctx_text"], "doc_id": r["doc_id"],
-                    "span_len": args.span_len})
+                    "span_len": hi - lo})
             for path, batch in out.items():
                 if not batch:
                     continue
@@ -155,9 +161,11 @@ def main():
     from nla.schema import compute_canonical_neighbors
     ic, iid = find_injection_token(tok)
     left, right = compute_canonical_neighbors(tok, SINGLE_TEMPLATE, ic, iid)
-    side = {"dataset_id": f"pooled_single_L42to62_span{args.span_len}",
+    side = {"dataset_id": (f"pooled_single_L42to62_d{args.deep_from}"
+                          f"to{args.pool_upto}_{args.weight_mode}"),
             "stage": "av_sft", "row_count": n["train"], "kind": "nla_dataset",
             "schema_version": 1, "keep_debug_metadata": True, "n_slots": 1,
+            "span_len": args.pool_upto - args.deep_from,
             "extraction": {"base_model": args.base_model, "d_model": 5120,
                            "layer_index": 62, "source_layer": 42,
                            "transport": (f"token_pooled_LOCAL_jacobian_"
