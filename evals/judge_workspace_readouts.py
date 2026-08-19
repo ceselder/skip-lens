@@ -36,6 +36,10 @@ The surface answer/target, when defined, is: {target}
 Independent sampled readouts of the SAME activation:
 {readouts}
 
+There are exactly {readout_count} readouts in the JSON array above. Return
+exactly {readout_count} score objects in the same order; embedded newlines are
+part of one string, not additional readouts.
+
 For each readout separately:
 1. Mark which expected intermediate concepts it states or clearly implies. Do not infer a concept from the original prompt; it must be present in the readout.
 2. Score coherence from 1 (broken word salad) to 5 (clear, internally coherent phrase or continuation).
@@ -46,6 +50,12 @@ Return JSON only, preserving readout order:
 {{"readouts": [{{"covered": ["exact expected strings only"], "coherence": 1, "unrelated_hallucination": false, "answer_skip": false}}]}}"""
 
 
+def record_key(record):
+    return (
+        record["distribution"], record["name"], int(record["layer"]), record["mode"]
+    )
+
+
 def make_prompt(record):
     concepts = record["intermediates"]
     readouts = record["readouts"]
@@ -53,13 +63,16 @@ def make_prompt(record):
         prompt=record["prompt"][:1800],
         concepts="\n".join(f"- {x}" for x in concepts),
         target=record.get("target") or "(none)",
-        readouts="\n".join(f"[{i}] {x}" for i, x in enumerate(readouts)),
+        readouts=json.dumps(readouts, ensure_ascii=False),
+        readout_count=len(readouts),
     )
 
 
 def parse(record, text, err):
+    clean_record = {k: v for k, v in record.items()
+                    if k not in {"scores", "judge_error"}}
     if text is None:
-        return {**record, "judge_error": err}
+        return {**clean_record, "judge_error": err}
     try:
         obj, _ = json.JSONDecoder().raw_decode(text[text.index("{"):])
         scores = obj["readouts"]
@@ -68,9 +81,9 @@ def parse(record, text, err):
             raise ValueError(
                 f"returned {len(scores)} scores for {expected_count} readouts"
             )
-        return {**record, "scores": scores}
+        return {**clean_record, "scores": scores}
     except (ValueError, KeyError, TypeError) as exc:
-        return {**record, "judge_error": f"{exc}: {text[:240]}"}
+        return {**clean_record, "judge_error": f"{exc}: {text[:240]}"}
 
 
 def lexical_jlens_coverage(record):
@@ -165,31 +178,118 @@ def summarise_band(records):
     return out
 
 
+def summarise_overall(summary, summary_band):
+    """Micro-average the per-distribution summaries over released prompts."""
+    layer_buckets = {}
+    for distribution in summary.values():
+        for mode, layers in distribution.items():
+            for layer, values in layers.items():
+                bucket = layer_buckets.setdefault((mode, layer), [])
+                bucket.append(values)
+
+    by_layer = {}
+    layer_metrics = (
+        "concept_recall_at_k", "joint_single_readout_recovery",
+        "mean_coherence_1_5", "unrelated_hallucination_rate",
+        "answer_skip_rate", "jlens_lexical_concept_recall",
+    )
+    for (mode, layer), rows in layer_buckets.items():
+        n_items = sum(row["n_items"] for row in rows)
+        by_layer.setdefault(mode, {})[layer] = {
+            "n_items": n_items,
+            **{
+                metric: sum(row[metric] * row["n_items"] for row in rows)
+                / n_items
+                for metric in layer_metrics
+            },
+        }
+
+    band_buckets = {}
+    for distribution in summary_band.values():
+        for mode, values in distribution.items():
+            band_buckets.setdefault(mode, []).append(values)
+    band_metrics = (
+        "concept_recall_across_band", "joint_single_readout_any_layer",
+        "jlens_concept_recall_across_band",
+    )
+    band = {}
+    for mode, rows in band_buckets.items():
+        n_items = sum(row["n_items"] for row in rows)
+        band[mode] = {
+            "n_items": n_items,
+            **{
+                metric: sum(row[metric] * row["n_items"] for row in rows)
+                / n_items
+                for metric in band_metrics
+            },
+        }
+    return {"by_layer": by_layer, "band": band}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--workers", type=int, default=24)
+    ap.add_argument("--max-tokens", type=int, default=4096,
+                    help="judge output budget; must include Sonnet 5 reasoning tokens")
+    ap.add_argument("--layers", default=None,
+                    help="optional comma-separated layer subset")
+    ap.add_argument("--modes", default=None,
+                    help="optional comma-separated readout-mode subset")
+    ap.add_argument("--retry-errors-only", action="store_true",
+                    help="input is a judged file; repair only its errored records")
     ap.add_argument("--sync", action="store_true",
                     help="use synchronous low-priority calls (small smoke tests only)")
     args = ap.parse_args()
     data = json.loads(Path(args.input).read_text())
-    source_records = data["records"]
+    all_records = data["records"]
+    source_records = all_records
+    if args.retry_errors_only:
+        source_records = [x for x in source_records if "judge_error" in x]
+    if args.layers:
+        selected_layers = {int(x) for x in args.layers.split(",")}
+        source_records = [x for x in source_records if x["layer"] in selected_layers]
+    if args.modes:
+        selected_modes = set(args.modes.split(","))
+        source_records = [x for x in source_records if x["mode"] in selected_modes]
     if args.sync:
         def one(record):
             return parse(record, *llm_call(
-                make_prompt(record), MODEL, max_tokens=1024, temperature=0.0))
+                make_prompt(record), MODEL, max_tokens=args.max_tokens, temperature=0.0))
         with ThreadPoolExecutor(max_workers=args.workers) as pool:
             records = list(pool.map(one, source_records))
     else:
-        results = batch_call([make_prompt(record) for record in source_records],
-                             MODEL, 1024, args.out + ".batch.json")
+        prompts = [make_prompt(record) for record in source_records]
+        results = batch_call(
+            prompts, MODEL, args.max_tokens, args.out + ".batch.json")
         records = [parse(record, text, err)
                    for record, (text, err) in zip(source_records, results)]
+        retry_indices = [i for i, record in enumerate(records)
+                         if "judge_error" in record]
+        if retry_indices:
+            print(f"[judge] retrying {len(retry_indices)} malformed/failed responses", flush=True)
+            retry_results = batch_call(
+                [prompts[i] for i in retry_indices], MODEL, args.max_tokens * 2,
+                args.out + ".retry.batch.json",
+            )
+            for i, (text, err) in zip(retry_indices, retry_results):
+                records[i] = parse(source_records[i], text, err)
+    if args.retry_errors_only:
+        repaired = {record_key(record): record for record in records}
+        records = [repaired.get(record_key(record), record) for record in all_records]
+
+    summary = summarise(records)
+    summary_band = summarise_band(records)
     result = {
-        "meta": {**data["meta"], "judge_model": MODEL},
-        "summary": summarise(records),
-        "summary_band": summarise_band(records),
+        "meta": {
+            **data["meta"], "judge_model": MODEL,
+            "judge_layers": sorted({x["layer"] for x in source_records}),
+            "judge_modes": sorted({x["mode"] for x in source_records}),
+        },
+        "summary": summary,
+        "summary_band": summary_band,
+        "summary_overall": summarise_overall(summary, summary_band),
         "judge_errors": sum("judge_error" in x for x in records),
         "records": records,
     }
