@@ -109,6 +109,12 @@ def main():
         model, vref, cfg.injection_token_id,
         cfg.injection_left_neighbor_id, cfg.injection_right_neighbor_id)
     decoder = resolve_decoder_layers(model.get_base_model())
+    invalid_layers = [layer for layer in layers_to_read
+                      if not 0 <= layer < len(decoder)]
+    if invalid_layers:
+        raise ValueError(
+            f"decoder has {len(decoder)} blocks; invalid module indices {invalid_layers}"
+        )
     captured = {}
     for layer in layers_to_read:
         decoder[layer].register_forward_hook(
@@ -271,6 +277,11 @@ def main():
             "base": args.base_ckpt, "checkpoint": args.av_ckpt,
             "official_datasets": True, "layers": layers_to_read,
             "modes": modes, "samples": args.samples, "seed": args.seed,
+            "activation_indexing": (
+                "layer K = output of decoder.layers[K] = HF hidden_states[K+1]; "
+                "raw mode injects this post-block residual without Jacobian transport"
+            ),
+            "decoder_blocks": len(decoder),
         },
         "records": records,
     }
